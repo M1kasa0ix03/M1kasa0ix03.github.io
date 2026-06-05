@@ -19,6 +19,29 @@
                 <li><a href="#contact" class="nav-link">联系</a></li>
             </ul>
             <div class="nav-actions">
+                <!-- 未登录 -->
+                <div class="auth-buttons" id="authButtons">
+                    <button class="btn-auth btn-login" id="btnLogin"><i class="fas fa-sign-in-alt"></i> 登录</button>
+                    <button class="btn-auth btn-register" id="btnRegister"><i class="fas fa-user-plus"></i> 注册</button>
+                </div>
+                <!-- 已登录 -->
+                <div class="user-dropdown" id="userDropdown" style="display:none;">
+                    <button class="user-avatar-btn" id="userAvatarBtn">
+                        <span id="userAvatarEmoji">👤</span>
+                        <span id="userNavName">M1kasa</span>
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
+                    <div class="user-menu" id="userMenu">
+                        <div class="user-menu-header">
+                            <span id="menuUserEmoji">👤</span>
+                            <div>
+                                <strong id="menuUserName">M1kasa</strong>
+                                <span class="user-role-badge" id="menuUserRole">管理员</span>
+                            </div>
+                        </div>
+                        <button class="user-menu-item" id="btnLogout"><i class="fas fa-sign-out-alt"></i> 退出登录</button>
+                    </div>
+                </div>
                 <button class="theme-toggle" id="themeToggle" title="切换主题">
                     <i class="fas fa-moon"></i>
                 </button>
@@ -217,11 +240,13 @@
                 <div class="comments-list" id="commentsList">
                     <!-- JS 动态渲染 -->
                 </div>
-                <div class="comment-form">
-                    <input type="text" id="commentName" placeholder="你的昵称" maxlength="30">
-                    <textarea id="commentBody" placeholder="写下你的想法..." rows="3" maxlength="500"></textarea>
+                <div class="comment-form" id="commentFormWrapper">
+                    <textarea id="commentBody" placeholder="写下你的想法...（Ctrl+Enter 发表）" rows="3" maxlength="500"></textarea>
                     <button class="btn btn-primary" id="btnSubmitComment"><i class="fas fa-paper-plane"></i> 发表评论</button>
                     <p class="comment-hint" id="commentHint"></p>
+                </div>
+                <div class="comment-login-nag" id="commentLoginNag" style="display:none;">
+                    <p>🔒 <a href="#" id="commentLoginLink">登录</a> 后才能发表评论</p>
                 </div>
             </div>
         </div>
@@ -293,6 +318,50 @@
             <div class="editor-footer">
                 <p class="editor-hint" id="editorHint"></p>
                 <button class="btn btn-primary" id="btnPublish"><i class="fas fa-paper-plane"></i> 发布文章</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 登录/注册弹窗 -->
+    <div class="auth-modal" id="authModal">
+        <div class="auth-overlay" id="authOverlay"></div>
+        <div class="auth-content" id="authContent">
+            <button class="auth-close" id="authClose"><i class="fas fa-times"></i></button>
+            <!-- 登录表单 -->
+            <div class="auth-form" id="loginForm">
+                <div class="auth-icon">🔐</div>
+                <h2 class="auth-title">登录账号</h2>
+                <div class="auth-field">
+                    <label>用户名</label>
+                    <input type="text" id="loginUsername" placeholder="请输入用户名" maxlength="20" autocomplete="username">
+                </div>
+                <div class="auth-field">
+                    <label>密码</label>
+                    <input type="password" id="loginPassword" placeholder="请输入密码" maxlength="30" autocomplete="current-password">
+                </div>
+                <p class="auth-hint" id="loginHint"></p>
+                <button class="btn btn-primary auth-submit" id="btnLoginSubmit"><i class="fas fa-sign-in-alt"></i> 登录</button>
+                <p class="auth-switch">还没有账号？<a href="#" id="switchToRegister">立即注册 →</a></p>
+            </div>
+            <!-- 注册表单 -->
+            <div class="auth-form" id="registerForm" style="display:none;">
+                <div class="auth-icon">✨</div>
+                <h2 class="auth-title">创建账号</h2>
+                <div class="auth-field">
+                    <label>用户名</label>
+                    <input type="text" id="regUsername" placeholder="请输入用户名（3-20个字符）" maxlength="20" autocomplete="username">
+                </div>
+                <div class="auth-field">
+                    <label>密码</label>
+                    <input type="password" id="regPassword" placeholder="请输入密码（6-30个字符）" maxlength="30" autocomplete="new-password">
+                </div>
+                <div class="auth-field">
+                    <label>确认密码</label>
+                    <input type="password" id="regPasswordConfirm" placeholder="请再次输入密码" maxlength="30" autocomplete="new-password">
+                </div>
+                <p class="auth-hint" id="registerHint"></p>
+                <button class="btn btn-primary auth-submit" id="btnRegisterSubmit"><i class="fas fa-user-plus"></i> 注册</button>
+                <p class="auth-switch">已有账号？<a href="#" id="switchToLogin">立即登录 →</a></p>
             </div>
         </div>
     </div>

@@ -3,6 +3,76 @@
    Author: M1kasa
    ============================================ */
 
+// ===== 用户系统 =====
+function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash |= 0;
+    }
+    return 'bh_' + Math.abs(hash).toString(36);
+}
+
+function loadUsers() {
+    try {
+        const data = localStorage.getItem('blog_users');
+        return data ? JSON.parse(data) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveUsers(users) {
+    localStorage.setItem('blog_users', JSON.stringify(users));
+}
+
+function initDefaultAdmin() {
+    let users = loadUsers();
+    // 如果没有管理员，创建默认管理员账号
+    if (!users.some(u => u.role === 'admin')) {
+        users.unshift({
+            id: 1,
+            username: 'M1kasa',
+            password: simpleHash('admin123'),
+            role: 'admin',
+            createdAt: '2026-06-05'
+        });
+        saveUsers(users);
+        console.log('✅ 默认管理员已创建: M1kasa / admin123');
+    }
+}
+
+function getCurrentUser() {
+    try {
+        const data = localStorage.getItem('blog_current_user');
+        return data ? JSON.parse(data) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function setCurrentUser(user) {
+    if (user) {
+        localStorage.setItem('blog_current_user', JSON.stringify({
+            id: user.id,
+            username: user.username,
+            role: user.role
+        }));
+    } else {
+        localStorage.removeItem('blog_current_user');
+    }
+}
+
+function isLoggedIn() {
+    return getCurrentUser() !== null;
+}
+
+function isAdmin() {
+    const user = getCurrentUser();
+    return user && user.role === 'admin';
+}
+
 // ===== 博客数据 =====
 const blogPosts = [
     {
@@ -263,7 +333,6 @@ const modalClose = document.getElementById('modalClose');
 const postDetail = document.getElementById('postDetail');
 const commentsSection = document.getElementById('commentsSection');
 const commentsList = document.getElementById('commentsList');
-const commentName = document.getElementById('commentName');
 const commentBody = document.getElementById('commentBody');
 const btnSubmitComment = document.getElementById('btnSubmitComment');
 const commentHint = document.getElementById('commentHint');
@@ -288,6 +357,35 @@ const btnPublish = document.getElementById('btnPublish');
 const editorHint = document.getElementById('editorHint');
 
 let currentPostId = null; // 当前打开的文章 ID
+
+// 认证 DOM
+const authButtons = document.getElementById('authButtons');
+const userDropdown = document.getElementById('userDropdown');
+const userAvatarBtn = document.getElementById('userAvatarBtn');
+const userNavName = document.getElementById('userNavName');
+const userMenu = document.getElementById('userMenu');
+const btnLogout = document.getElementById('btnLogout');
+const btnLogin = document.getElementById('btnLogin');
+const btnRegister = document.getElementById('btnRegister');
+const authModal = document.getElementById('authModal');
+const authOverlay = document.getElementById('authOverlay');
+const authClose = document.getElementById('authClose');
+const loginForm = document.getElementById('loginForm');
+const registerForm = document.getElementById('registerForm');
+const loginUsername = document.getElementById('loginUsername');
+const loginPassword = document.getElementById('loginPassword');
+const loginHint = document.getElementById('loginHint');
+const btnLoginSubmit = document.getElementById('btnLoginSubmit');
+const regUsername = document.getElementById('regUsername');
+const regPassword = document.getElementById('regPassword');
+const regPasswordConfirm = document.getElementById('regPasswordConfirm');
+const registerHint = document.getElementById('registerHint');
+const btnRegisterSubmit = document.getElementById('btnRegisterSubmit');
+const switchToRegister = document.getElementById('switchToRegister');
+const switchToLogin = document.getElementById('switchToLogin');
+const commentFormWrapper = document.getElementById('commentFormWrapper');
+const commentLoginNag = document.getElementById('commentLoginNag');
+const commentLoginLink = document.getElementById('commentLoginLink');
 
 // ===== 渲染文章卡片 =====
 function renderPosts(posts) {
@@ -348,6 +446,8 @@ function filterPosts() {
     const query = searchInput.value.toLowerCase().trim();
     const allPosts = getAllPosts();
     let filtered = allPosts;
+
+    if (currentTag !== 'all') {
         filtered = filtered.filter(p => p.tags.includes(currentTag));
     }
 
@@ -412,8 +512,8 @@ function openPost(post) {
         </div>
         <div class="post-body">${post.body}</div>`;
     renderComments(post.id);
+    updateCommentFormUI();
     // 清空评论表单
-    commentName.value = '';
     commentBody.value = '';
     commentHint.textContent = '';
     postModal.classList.add('active');
@@ -465,7 +565,7 @@ function renderComments(postId) {
                     <span class="comment-item-name">${escapeHtml(c.name)}</span>
                     <div style="display:flex;align-items:center;gap:10px;">
                         <span class="comment-item-time">${c.time}</span>
-                        <button class="comment-item-delete" data-comment-id="${c.id}" title="删除">🗑</button>
+                        ${(isAdmin() || (getCurrentUser() && getCurrentUser().id === c.userId)) ? `<button class="comment-item-delete" data-comment-id="${c.id}" title="删除">🗑</button>` : ''}
                     </div>
                 </div>
                 <p class="comment-item-body">${escapeHtml(c.body)}</p>
@@ -490,10 +590,14 @@ function escapeHtml(text) {
 }
 
 function submitComment() {
-    const name = commentName.value.trim();
+    const user = getCurrentUser();
+    if (!user) {
+        commentHint.textContent = '⚠️ 请先登录后再评论';
+        return;
+    }
+
     const body = commentBody.value.trim();
 
-    if (!name) { commentHint.textContent = '请输入昵称'; return; }
     if (!body) { commentHint.textContent = '请输入评论内容'; return; }
     if (!currentPostId) return;
 
@@ -506,10 +610,9 @@ function submitComment() {
         String(now.getHours()).padStart(2, '0') + ':' +
         String(now.getMinutes()).padStart(2, '0');
 
-    comments.push({ id: newId, name, body, time: timeStr });
+    comments.push({ id: newId, name: user.username, userId: user.id, body, time: timeStr });
     saveComments(currentPostId, comments);
     renderComments(currentPostId);
-    commentName.value = '';
     commentBody.value = '';
     commentHint.textContent = '✅ 评论发表成功！';
     setTimeout(() => { commentHint.textContent = ''; }, 2000);
@@ -536,6 +639,10 @@ commentBody.addEventListener('keydown', (e) => {
 
 // ===== 写文章编辑器 =====
 function openEditor() {
+    if (!isAdmin()) {
+        alert('⚠️ 只有管理员才能发布文章。\n\n当前登录账号无此权限。');
+        return;
+    }
     editorModal.classList.add('active');
     document.body.style.overflow = 'hidden';
     editTitle.value = '';
@@ -639,6 +746,208 @@ btnWriteArticle.addEventListener('click', openEditor);
 btnPublish.addEventListener('click', publishPost);
 editorClose.addEventListener('click', closeEditor);
 editorOverlay.addEventListener('click', closeEditor);
+
+// ===== 用户界面更新 =====
+function updateAuthUI() {
+    const user = getCurrentUser();
+    if (user) {
+        authButtons.style.display = 'none';
+        userDropdown.style.display = 'block';
+        userNavName.textContent = user.username;
+        document.getElementById('menuUserName').textContent = user.username;
+        document.getElementById('menuUserRole').textContent = user.role === 'admin' ? '管理员' : '普通用户';
+        document.getElementById('menuUserRole').className = 'user-role-badge ' + (user.role === 'admin' ? 'admin' : 'user');
+        // 更新写文章按钮可见性
+        if (btnWriteArticle) {
+            btnWriteArticle.style.display = user.role === 'admin' ? 'inline-flex' : 'none';
+        }
+    } else {
+        authButtons.style.display = 'flex';
+        userDropdown.style.display = 'none';
+        if (btnWriteArticle) {
+            btnWriteArticle.style.display = 'none';
+        }
+    }
+}
+
+function updateCommentFormUI() {
+    if (isLoggedIn()) {
+        commentFormWrapper.style.display = 'flex';
+        commentLoginNag.style.display = 'none';
+        const user = getCurrentUser();
+        if (commentBody) {
+            commentBody.placeholder = `以 ${user.username} 的身份评论...（Ctrl+Enter 发表）`;
+        }
+    } else {
+        commentFormWrapper.style.display = 'none';
+        commentLoginNag.style.display = 'block';
+    }
+}
+
+// ===== 登录/注册弹窗 =====
+function openAuthModal(mode) {
+    authModal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    if (mode === 'register') {
+        loginForm.style.display = 'none';
+        registerForm.style.display = 'block';
+        regUsername.value = '';
+        regPassword.value = '';
+        regPasswordConfirm.value = '';
+        registerHint.textContent = '';
+    } else {
+        loginForm.style.display = 'block';
+        registerForm.style.display = 'none';
+        loginUsername.value = '';
+        loginPassword.value = '';
+        loginHint.textContent = '';
+        loginHint.className = 'auth-hint';
+    }
+    setTimeout(() => {
+        const input = mode === 'register' ? regUsername : loginUsername;
+        if (input) input.focus();
+    }, 300);
+}
+
+function closeAuthModal() {
+    authModal.classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+function handleLogin() {
+    const username = loginUsername.value.trim();
+    const password = loginPassword.value.trim();
+
+    if (!username) { loginHint.textContent = '请输入用户名'; loginHint.className = 'auth-hint error'; return; }
+    if (!password) { loginHint.textContent = '请输入密码'; loginHint.className = 'auth-hint error'; return; }
+
+    const users = loadUsers();
+    const user = users.find(u => u.username === username && u.password === simpleHash(password));
+
+    if (user) {
+        setCurrentUser(user);
+        loginHint.textContent = '✅ 登录成功！';
+        loginHint.className = 'auth-hint success';
+        setTimeout(() => {
+            closeAuthModal();
+            updateAuthUI();
+            updateCommentFormUI();
+            filterPosts();
+        }, 600);
+    } else {
+        loginHint.textContent = '❌ 用户名或密码错误';
+        loginHint.className = 'auth-hint error';
+    }
+}
+
+function handleRegister() {
+    const username = regUsername.value.trim();
+    const password = regPassword.value.trim();
+    const passwordConfirm = regPasswordConfirm.value.trim();
+
+    if (!username || username.length < 3) { registerHint.textContent = '用户名至少需要3个字符'; registerHint.className = 'auth-hint error'; return; }
+    if (!password || password.length < 6) { registerHint.textContent = '密码至少需要6个字符'; registerHint.className = 'auth-hint error'; return; }
+    if (password !== passwordConfirm) { registerHint.textContent = '两次密码不一致'; registerHint.className = 'auth-hint error'; return; }
+
+    const users = loadUsers();
+    if (users.some(u => u.username === username)) {
+        registerHint.textContent = '该用户名已被注册';
+        registerHint.className = 'auth-hint error';
+        return;
+    }
+
+    const newUser = {
+        id: Date.now(),
+        username,
+        password: simpleHash(password),
+        role: 'user',
+        createdAt: new Date().toISOString().split('T')[0]
+    };
+
+    users.push(newUser);
+    saveUsers(users);
+
+    registerHint.textContent = '✅ 注册成功！正在自动登录...';
+    registerHint.className = 'auth-hint success';
+
+    setTimeout(() => {
+        setCurrentUser(newUser);
+        closeAuthModal();
+        updateAuthUI();
+        updateCommentFormUI();
+        filterPosts();
+    }, 800);
+}
+
+function handleLogout() {
+    if (confirm('确定要退出登录吗？')) {
+        setCurrentUser(null);
+        userMenu.parentElement.classList.remove('open');
+        updateAuthUI();
+        updateCommentFormUI();
+        filterPosts();
+        // 如果当前在文章弹窗，也更新评论表单
+        if (currentPostId) {
+            renderComments(currentPostId);
+        }
+    }
+}
+
+// 用户下拉菜单
+userAvatarBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    userDropdown.classList.toggle('open');
+});
+
+document.addEventListener('click', () => {
+    userDropdown.classList.remove('open');
+});
+
+userDropdown.addEventListener('click', (e) => {
+    e.stopPropagation();
+});
+
+btnLogout.addEventListener('click', handleLogout);
+
+// 登录/注册按钮
+btnLogin.addEventListener('click', () => openAuthModal('login'));
+btnRegister.addEventListener('click', () => openAuthModal('register'));
+btnLoginSubmit.addEventListener('click', handleLogin);
+btnRegisterSubmit.addEventListener('click', handleRegister);
+
+// 回车提交
+loginPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleLogin(); });
+loginUsername.addEventListener('keydown', (e) => { if (e.key === 'Enter') loginPassword.focus(); });
+regPasswordConfirm.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleRegister(); });
+
+// 切换登录/注册
+switchToRegister.addEventListener('click', (e) => {
+    e.preventDefault();
+    loginForm.style.display = 'none';
+    registerForm.style.display = 'block';
+    loginHint.textContent = '';
+    registerHint.textContent = '';
+    regUsername.focus();
+});
+
+switchToLogin.addEventListener('click', (e) => {
+    e.preventDefault();
+    registerForm.style.display = 'none';
+    loginForm.style.display = 'block';
+    loginHint.textContent = '';
+    registerHint.textContent = '';
+    loginUsername.focus();
+});
+
+// 弹窗关闭
+authClose.addEventListener('click', closeAuthModal);
+authOverlay.addEventListener('click', closeAuthModal);
+
+// 评论区登录链接
+commentLoginLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    openAuthModal('login');
+});
 
 // ===== 回到顶部 =====
 window.addEventListener('scroll', () => {
@@ -751,8 +1060,13 @@ function animateStats() {
 
 // ===== 初始化 =====
 function init() {
+    initDefaultAdmin();
+    updateAuthUI();
     filterPosts();
     animateStats();
+
+    console.log('🔐 默认管理员: M1kasa / admin123');
+    console.log('👤 登录后即可评论 | 管理员可发布文章');
 
     // 初始滚动渐入
     setTimeout(() => {
