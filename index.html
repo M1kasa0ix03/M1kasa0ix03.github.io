@@ -16,6 +16,7 @@
                 <li><a href="#home" class="nav-link active">首页</a></li>
                 <li><a href="#blog" class="nav-link">文章</a></li>
                 <li><a href="#about" class="nav-link">关于</a></li>
+                <li><a href="#guestbook" class="nav-link">留言板</a></li>
                 <li><a href="#contact" class="nav-link">联系</a></li>
             </ul>
             <div class="nav-actions">
@@ -181,11 +182,34 @@
                     <h3>Twitter</h3>
                     <p>@M1kasa</p>
                 </a>
-                <a href="#" class="contact-card">
+                <a href="#guestbook" class="contact-card">
                     <i class="fas fa-comments"></i>
                     <h3>留言板</h3>
-                    <p>文章下方留言</p>
+                    <p>给作者留言</p>
                 </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- 留言板 -->
+    <section id="guestbook" class="section guestbook-section">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">💬 访客留言板</h2>
+                <p class="section-subtitle">留下你想对作者说的话</p>
+            </div>
+            <div class="guestbook-wrapper">
+                <div class="guestbook-messages" id="guestbookMessages">
+                    <!-- JS 动态渲染 -->
+                </div>
+                <div class="guestbook-form-wrapper" id="guestbookFormWrapper">
+                    <textarea id="guestbookBody" placeholder="写下你想说的话...（Ctrl+Enter 发表）" rows="3" maxlength="500"></textarea>
+                    <button class="btn btn-primary" id="btnGuestbookSubmit"><i class="fas fa-paper-plane"></i> 发表留言</button>
+                    <p class="guestbook-hint" id="guestbookHint"></p>
+                </div>
+                <div class="guestbook-login-nag" id="guestbookLoginNag" style="display:none;">
+                    <p>🔒 <a href="#" id="guestbookLoginLink">登录</a> 后才能留言</p>
+                </div>
             </div>
         </div>
     </section>
@@ -203,6 +227,7 @@
                     <a href="#home">首页</a>
                     <a href="#blog">文章</a>
                     <a href="#about">关于</a>
+                    <a href="#guestbook">留言板</a>
                     <a href="#contact">联系</a>
                 </div>
                 <div class="footer-social">

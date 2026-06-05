@@ -1578,6 +1578,166 @@ img {
     cursor: pointer;
 }
 
+/* ===== 留言板 ===== */
+.guestbook-section {
+    background: var(--bg-secondary);
+}
+
+.guestbook-wrapper {
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.guestbook-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 28px;
+    max-height: 500px;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+
+.guestbook-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 18px 20px;
+    transition: all var(--transition);
+}
+
+.guestbook-item:hover {
+    box-shadow: var(--shadow-sm);
+}
+
+.guestbook-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.guestbook-item-user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.guestbook-item-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--gradient);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+}
+
+.guestbook-item-name {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--accent);
+}
+
+.guestbook-item-time {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.guestbook-item-body {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    line-height: 1.7;
+    word-break: break-word;
+}
+
+.guestbook-item-delete {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.8rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    font-family: inherit;
+}
+
+.guestbook-item-delete:hover {
+    color: #ff4757;
+    background: rgba(255, 71, 87, 0.1);
+}
+
+.guestbook-form-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.guestbook-form-wrapper textarea {
+    padding: 12px 16px;
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 0.95rem;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    outline: none;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 80px;
+    transition: border-color var(--transition);
+}
+
+.guestbook-form-wrapper textarea:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(108, 99, 255, 0.1);
+}
+
+.guestbook-form-wrapper .btn-primary {
+    align-self: flex-end;
+}
+
+.guestbook-hint {
+    font-size: 0.82rem;
+    min-height: 20px;
+    color: var(--accent);
+    text-align: right;
+}
+
+.guestbook-login-nag {
+    text-align: center;
+    padding: 20px;
+    background: var(--bg-card);
+    border-radius: var(--radius-md);
+    border: 1px dashed var(--border);
+}
+
+.guestbook-login-nag p {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+}
+
+.guestbook-login-nag a {
+    color: var(--accent);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.guestbook-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+    font-size: 1rem;
+}
+
+.guestbook-empty .empty-icon {
+    font-size: 3rem;
+    margin-bottom: 12px;
+}
+
 /* ===== 响应式 ===== */
 @media (max-width: 768px) {
     .nav-menu {

@@ -177,6 +177,15 @@ const commentFormWrapper = document.getElementById('commentFormWrapper');
 const commentLoginNag = document.getElementById('commentLoginNag');
 const commentLoginLink = document.getElementById('commentLoginLink');
 
+// 留言板 DOM
+const guestbookMessages = document.getElementById('guestbookMessages');
+const guestbookBody = document.getElementById('guestbookBody');
+const btnGuestbookSubmit = document.getElementById('btnGuestbookSubmit');
+const guestbookHint = document.getElementById('guestbookHint');
+const guestbookFormWrapper = document.getElementById('guestbookFormWrapper');
+const guestbookLoginNag = document.getElementById('guestbookLoginNag');
+const guestbookLoginLink = document.getElementById('guestbookLoginLink');
+
 // ===== 渲染文章卡片 =====
 function renderPosts(posts) {
     blogGrid.innerHTML = '';
@@ -547,7 +556,6 @@ function updateAuthUI() {
         document.getElementById('menuUserName').textContent = user.username;
         document.getElementById('menuUserRole').textContent = user.role === 'admin' ? '管理员' : '普通用户';
         document.getElementById('menuUserRole').className = 'user-role-badge ' + (user.role === 'admin' ? 'admin' : 'user');
-        // 更新写文章按钮可见性
         if (btnWriteArticle) {
             btnWriteArticle.style.display = user.role === 'admin' ? 'inline-flex' : 'none';
         }
@@ -558,6 +566,8 @@ function updateAuthUI() {
             btnWriteArticle.style.display = 'none';
         }
     }
+    updateCommentFormUI();
+    updateGuestbookFormUI();
 }
 
 function updateCommentFormUI() {
@@ -573,6 +583,110 @@ function updateCommentFormUI() {
         commentLoginNag.style.display = 'block';
     }
 }
+
+// ===== 留言板 =====
+function loadGuestbookMessages() {
+    try {
+        const data = localStorage.getItem('blog_guestbook');
+        return data ? JSON.parse(data) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveGuestbookMessages(messages) {
+    localStorage.setItem('blog_guestbook', JSON.stringify(messages));
+}
+
+function renderGuestbook() {
+    const messages = loadGuestbookMessages();
+    if (messages.length === 0) {
+        guestbookMessages.innerHTML = '<div class="guestbook-empty"><div class="empty-icon">💭</div><p>还没有留言，来做第一个留言的人吧~</p></div>';
+    } else {
+        // 最新在前
+        const sorted = [...messages].reverse();
+        guestbookMessages.innerHTML = sorted.map(m => `
+            <div class="guestbook-item">
+                <div class="guestbook-item-header">
+                    <div class="guestbook-item-user">
+                        <div class="guestbook-item-avatar">${escapeHtml(m.name).charAt(0).toUpperCase()}</div>
+                        <span class="guestbook-item-name">${escapeHtml(m.name)}</span>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span class="guestbook-item-time">${m.time}</span>
+                        ${(isAdmin() || (getCurrentUser() && getCurrentUser().id === m.userId)) ? `<button class="guestbook-item-delete" data-gb-id="${m.id}" title="删除">🗑</button>` : ''}
+                    </div>
+                </div>
+                <p class="guestbook-item-body">${escapeHtml(m.body)}</p>
+            </div>
+        `).join('');
+
+        // 删除事件
+        guestbookMessages.querySelectorAll('.guestbook-item-delete').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (confirm('确定要删除这条留言吗？')) {
+                    deleteGuestbookMessage(parseInt(btn.dataset.gbId));
+                }
+            });
+        });
+    }
+}
+
+function updateGuestbookFormUI() {
+    if (isLoggedIn()) {
+        guestbookFormWrapper.style.display = 'flex';
+        guestbookLoginNag.style.display = 'none';
+        const user = getCurrentUser();
+        if (guestbookBody) {
+            guestbookBody.placeholder = `以 ${user.username} 的身份留言...（Ctrl+Enter 发表）`;
+        }
+    } else {
+        guestbookFormWrapper.style.display = 'none';
+        guestbookLoginNag.style.display = 'block';
+    }
+}
+
+function submitGuestbook() {
+    const user = getCurrentUser();
+    if (!user) {
+        guestbookHint.textContent = '⚠️ 请先登录后再留言';
+        return;
+    }
+    const body = guestbookBody.value.trim();
+    if (!body) { guestbookHint.textContent = '请输入留言内容'; return; }
+
+    const messages = loadGuestbookMessages();
+    const newId = messages.length > 0 ? Math.max(...messages.map(m => m.id)) + 1 : 1;
+    const now = new Date();
+    const timeStr = now.getFullYear() + '-' +
+        String(now.getMonth() + 1).padStart(2, '0') + '-' +
+        String(now.getDate()).padStart(2, '0') + ' ' +
+        String(now.getHours()).padStart(2, '0') + ':' +
+        String(now.getMinutes()).padStart(2, '0');
+
+    messages.push({ id: newId, name: user.username, userId: user.id, body, time: timeStr });
+    saveGuestbookMessages(messages);
+    renderGuestbook();
+    guestbookBody.value = '';
+    guestbookHint.textContent = '✅ 留言发表成功！';
+    setTimeout(() => { guestbookHint.textContent = ''; }, 2000);
+}
+
+function deleteGuestbookMessage(msgId) {
+    let messages = loadGuestbookMessages();
+    messages = messages.filter(m => m.id !== msgId);
+    saveGuestbookMessages(messages);
+    renderGuestbook();
+}
+
+btnGuestbookSubmit.addEventListener('click', submitGuestbook);
+guestbookBody.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) submitGuestbook();
+});
+guestbookLoginLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    openAuthModal('login');
+});
 
 // ===== 登录/注册弹窗 =====
 function openAuthModal(mode) {
@@ -853,10 +967,11 @@ function init() {
     initDefaultAdmin();
     updateAuthUI();
     filterPosts();
+    renderGuestbook();
     animateStats();
 
     console.log('🔐 默认管理员: M1kasa / admin123');
-    console.log('👤 登录后即可评论 | 管理员可发布文章');
+    console.log('👤 登录后即可评论留言 | 管理员可发布文章');
 
     // 初始滚动渐入
     setTimeout(() => {
