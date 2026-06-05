@@ -37,9 +37,8 @@ async function cloudSelectAll(table) {
 function cacheGet(key) { try { const d = localStorage.getItem(key); return d ? JSON.parse(d) : []; } catch(e) { return []; } }
 function cacheSet(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 
-// 云端优先写入：写本地 + 写云端（upsert 策略，不删已有数据）
+// 云端写入：只 upsert 到云端，不覆盖本地缓存（本地缓存由 pullFromCloud 统一管理）
 function saveAndSync(key, table, data) {
-    cacheSet(key, data);
     if (dbReady && dbClient) {
         // 逐条 upsert：如果 id 已存在则更新，否则插入
         data.forEach(r => {
@@ -82,8 +81,15 @@ function saveUsers(users) { saveAndSync('blog_users', 'users', users); }
 function initDefaultAdmin() {
     let users = loadUsers();
     if (!users.some(u => u.role === 'admin')) {
-        users.unshift({ id: 1, username: 'M1kasa', password: simpleHash('admin123'), role: 'admin', created_at: '2026-06-05' });
-        saveUsers(users);
+        const admin = { id: 1, username: 'M1kasa', password: simpleHash('admin123'), role: 'admin', created_at: '2026-06-05' };
+        users.unshift(admin);
+        cacheSet('blog_users', users);
+        // 只 upsert 管理员到云端，不覆盖本地缓存
+        if (dbReady && dbClient) {
+            dbClient.from('users').upsert(admin).then(({ error }) => {
+                if (error) console.warn('☁️ 管理员同步失败:', error.message);
+            }).catch(() => {});
+        }
         console.log('✅ 默认管理员已创建: M1kasa / admin123');
     }
 }
@@ -103,15 +109,40 @@ function genSafeId() {
     return Math.floor(Math.random() * 2000000000) + 1;
 }
 async function pullFromCloud() {
-    if (!dbReady) return;
+    if (!dbReady) {
+        showSyncToast('⚠️ 云数据库未连接，仅使用本地存储', 'error');
+        return;
+    }
+    showSyncToast('☁️ 正在同步云端数据...', 'loading');
     try {
         const tables = ['visits', 'guestbook', 'users', 'user_posts'];
         for (const t of tables) {
             const cloud = await cloudSelectAll(t);
             if (cloud && cloud.length > 0) {
                 const key = t === 'user_posts' ? 'blog_user_posts' : 'blog_' + t;
-                const local = cacheGet(key);
-                if (cloud.length >= local.length) cacheSet(key, cloud);
+                if (t === 'user_posts') {
+                    // user_posts 特殊处理：补齐 readTime/emoji，修复 tags 格式
+                    const fixed = cloud.map(cp => {
+                        // tags 可能是 JSON 字符串（DB存为text），也可能是数组
+                        let tags = cp.tags;
+                        if (typeof tags === 'string') {
+                            try { tags = JSON.parse(tags); } catch (_) { tags = [tags]; }
+                        }
+                        if (!Array.isArray(tags)) tags = [];
+                        return {
+                            ...cp,
+                            tags: tags,
+                            readTime: cp.readtime || '1 分钟',
+                            emoji: cp.emoji || '📝'
+                        };
+                    });
+                    cacheSet(key, fixed);
+                } else {
+                    cacheSet(key, cloud);
+                }
+                console.log('☁️ ' + t + ': ' + cloud.length + ' 条');
+            } else {
+                console.log('☁️ ' + t + ': 云端无数据（可能 RLS 拦截或确实为空）');
             }
         }
         // 评论特殊处理：按 post_id 分发到各篇文章的本地缓存
@@ -125,12 +156,43 @@ async function pullFromCloud() {
                 byPost[k].push(c);
             });
             Object.entries(byPost).forEach(([k, v]) => cacheSet(k, v));
+            console.log('☁️ comments: ' + cloudComments.length + ' 条');
+        } else {
+            console.log('☁️ comments: 云端无数据');
         }
         renderGuestbook();
         renderVisitorsPanel();
         filterPosts();
+        showSyncToast('✅ 云端同步完成', 'success');
         console.log('☁️ 云端数据已同步');
-    } catch (e) { console.log('☁️ 同步跳过:', e.message); }
+    } catch (e) {
+        showSyncToast('❌ 同步失败: ' + e.message, 'error');
+        console.log('☁️ 同步跳过:', e.message);
+    }
+}
+
+// 页面顶部同步状态提示
+function showSyncToast(msg, type) {
+    let toast = document.getElementById('syncToast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'syncToast';
+        toast.style.cssText = 'position:fixed;top:70px;left:50%;transform:translateX(-50%);z-index:9999;padding:8px 20px;border-radius:20px;font-size:14px;font-weight:500;transition:opacity 0.3s;pointer-events:none;';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    if (type === 'success') {
+        toast.style.background = '#10b981'; toast.style.color = '#fff';
+        setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 2500);
+    } else if (type === 'error') {
+        toast.style.background = '#ef4444'; toast.style.color = '#fff';
+        setTimeout(() => { toast.style.opacity = '0'; }, 4000);
+        setTimeout(() => { if (toast.parentNode) toast.remove(); }, 4500);
+    } else {
+        toast.style.background = '#6366f1'; toast.style.color = '#fff';
+    }
+    toast.style.opacity = '1';
 }
 
 function recordVisit(user) {
@@ -148,8 +210,20 @@ function recordVisit(user) {
             count: 1
         });
     }
-    saveVisits(visits);
+    // 更新本地缓存
+    cacheSet('blog_visits', visits);
     renderVisitorsPanel();
+
+    // 只 upsert 当前用户的访问记录到云端
+    const record = existing || visits[visits.length - 1];
+    if (dbReady && dbClient && record) {
+        dbClient.from('visits').upsert(record).then(() => {
+            // 从云端拉取全量数据更新本地缓存
+            cloudSelectAll('visits').then(cloud => {
+                if (cloud && cloud.length > 0) cacheSet('blog_visits', cloud);
+            }).catch(() => {});
+        }).catch(() => {});
+    }
 }
 
 function renderVisitorsPanel() {
@@ -232,11 +306,6 @@ const blogPosts = [
 
 // ===== 加载用户文章 =====
 function loadUserPosts() {
-    if (dbReady && dbClient) {
-        cloudSelectAll('user_posts').then(cloud => {
-            if (cloud && cloud.length > 0) { cacheSet('blog_user_posts', cloud); filterPosts(); }
-        }).catch(() => {});
-    }
     return cacheGet('blog_user_posts');
 }
 
@@ -484,15 +553,6 @@ document.addEventListener('keydown', (e) => {
 // ===== 评论区 =====
 function loadComments(postId) {
     const key = 'blog_comments_' + postId;
-    // 后台从云端刷新该文章评论
-    if (dbReady && dbClient) {
-        dbClient.from('comments').select('*').eq('post_id', postId).then(({ data, error }) => {
-            if (!error && data && data.length > 0) {
-                cacheSet(key, data);
-                if (currentPostId === postId) renderComments(postId);
-            }
-        }).catch(() => {});
-    }
     return cacheGet(key);
 }
 
@@ -535,7 +595,7 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-function submitComment() {
+async function submitComment() {
     const user = getCurrentUser();
     if (!user) {
         commentHint.textContent = '⚠️ 请先登录后再评论';
@@ -547,8 +607,6 @@ function submitComment() {
     if (!body) { commentHint.textContent = '请输入评论内容'; return; }
     if (!currentPostId) return;
 
-    const comments = loadComments(currentPostId);
-    const newId = genSafeId();
     const now = new Date();
     const timeStr = now.getFullYear() + '-' +
         String(now.getMonth() + 1).padStart(2, '0') + '-' +
@@ -556,8 +614,13 @@ function submitComment() {
         String(now.getHours()).padStart(2, '0') + ':' +
         String(now.getMinutes()).padStart(2, '0');
 
-    comments.push({ id: newId, username: user.username, user_id: user.id, post_id: currentPostId, body, time: timeStr });
-    saveComments(currentPostId, comments);
+    const newComment = { id: genSafeId(), username: user.username, user_id: user.id, post_id: currentPostId, body, time: timeStr };
+
+    // 先添加到本地缓存，立即显示
+    const key = 'blog_comments_' + currentPostId;
+    const local = cacheGet(key);
+    local.push(newComment);
+    cacheSet(key, local);
     renderComments(currentPostId);
     commentBody.value = '';
     commentHint.textContent = '✅ 评论发表成功！';
@@ -565,14 +628,38 @@ function submitComment() {
 
     // 刷新文章卡片上的评论数
     filterPosts();
+
+    // 上传到云端，然后从云端拉取最新数据（包含其他用户的评论）
+    if (dbReady && dbClient) {
+        try {
+            await dbClient.from('comments').upsert(newComment);
+            const { data: cloud } = await dbClient.from('comments').select('*').eq('post_id', currentPostId);
+            if (cloud && cloud.length > 0) {
+                cacheSet(key, cloud);
+                renderComments(currentPostId);
+                filterPosts();
+            }
+        } catch (e) {
+            console.warn('☁️ 评论同步失败:', e.message);
+        }
+    }
 }
 
 function deleteComment(postId, commentId) {
-    let comments = loadComments(postId);
+    // 先从本地缓存移除，立即更新 UI
+    const key = 'blog_comments_' + postId;
+    let comments = cacheGet(key);
     comments = comments.filter(c => c.id !== commentId);
-    saveComments(postId, comments);
+    cacheSet(key, comments);
     renderComments(postId);
     filterPosts();
+
+    // 从云端删除
+    if (dbReady && dbClient) {
+        dbClient.from('comments').delete().eq('id', commentId).then(({ error }) => {
+            if (error) console.warn('☁️ 删除评论失败:', error.message);
+        }).catch(() => {});
+    }
 }
 
 btnSubmitComment.addEventListener('click', submitComment);
@@ -605,7 +692,7 @@ function closeEditor() {
     document.body.style.overflow = '';
 }
 
-function publishPost() {
+async function publishPost() {
     const title = editTitle.value.trim();
     const excerpt = editExcerpt.value.trim();
     const tag = editTag.value;
@@ -616,8 +703,6 @@ function publishPost() {
     if (!excerpt) { editorHint.textContent = '⚠️ 请输入文章摘要'; return; }
     if (!body) { editorHint.textContent = '⚠️ 请输入文章内容'; return; }
 
-    const userPosts = loadUserPosts();
-    const newId = genSafeId();
     const now = new Date();
     const dateStr = now.getFullYear() + '-' +
         String(now.getMonth() + 1).padStart(2, '0') + '-' +
@@ -626,7 +711,7 @@ function publishPost() {
     const readTime = Math.max(1, Math.ceil(wordCount / 400)) + ' 分钟';
 
     const newPost = {
-        id: newId,
+        id: genSafeId(),
         title,
         excerpt,
         tags: [tag],
@@ -636,8 +721,10 @@ function publishPost() {
         body: `<p>${body.replace(/\n/g, '</p><p>')}</p>`
     };
 
-    userPosts.unshift(newPost);
-    saveUserPosts(userPosts);
+    // 先添加到本地缓存，立即显示
+    const local = cacheGet('blog_user_posts');
+    local.unshift(newPost);
+    cacheSet('blog_user_posts', local);
 
     editorHint.textContent = '✅ 文章发布成功！';
     setTimeout(() => {
@@ -649,16 +736,68 @@ function publishPost() {
         filterPosts();
         document.getElementById('blog').scrollIntoView({ behavior: 'smooth' });
     }, 800);
+
+    // 上传到云端，然后从云端拉取最新数据
+    if (dbReady && dbClient) {
+        try {
+            // DB 列: id, title, excerpt, tags, date, readtime, emoji, body（均为 NOT NULL）
+            // tags 需转 JSON 字符串（DB 列类型为 text）
+            const dbPost = {
+                id: newPost.id,
+                title: newPost.title,
+                excerpt: newPost.excerpt,
+                tags: JSON.stringify(newPost.tags),
+                date: newPost.date,
+                readtime: newPost.readTime,
+                emoji: newPost.emoji,
+                body: newPost.body
+            };
+            const { error } = await dbClient.from('user_posts').upsert(dbPost);
+            if (error) {
+                console.warn('☁️ 文章 upsert 失败:', error.message);
+            }
+            const { data: cloud } = await dbClient.from('user_posts').select('*');
+            if (cloud && cloud.length > 0) {
+                // 合并云数据：parse tags JSON，补齐 readTime/emoji
+                const merged = cloud.map(cp => {
+                    let tags = cp.tags;
+                    if (typeof tags === 'string') {
+                        try { tags = JSON.parse(tags); } catch (_) { tags = [tags]; }
+                    }
+                    if (!Array.isArray(tags)) tags = [];
+                    return {
+                        ...cp,
+                        tags: tags,
+                        readTime: cp.readtime || '1 分钟',
+                        emoji: cp.emoji || '📝'
+                    };
+                });
+                cacheSet('blog_user_posts', merged);
+                filterPosts();
+                console.log('☁️ user_posts 同步完成: ' + merged.length + ' 篇');
+            }
+        } catch (e) {
+            console.warn('☁️ 文章同步失败:', e.message);
+        }
+    }
 }
 
 function deletePost(postId) {
     if (!confirm('确定要删除这篇文章吗？此操作不可撤销。')) return;
-    let userPosts = loadUserPosts();
+    // 先从本地缓存移除
+    let userPosts = cacheGet('blog_user_posts');
     userPosts = userPosts.filter(p => p.id !== postId);
-    saveUserPosts(userPosts);
+    cacheSet('blog_user_posts', userPosts);
     // 也删除相关评论
     localStorage.removeItem('blog_comments_' + postId);
     filterPosts();
+
+    // 从云端删除
+    if (dbReady && dbClient) {
+        dbClient.from('user_posts').delete().eq('id', postId).then(({ error }) => {
+            if (error) console.warn('☁️ 删除文章失败:', error.message);
+        }).catch(() => {});
+    }
 }
 
 // 编辑器工具栏
@@ -734,11 +873,6 @@ function updateCommentFormUI() {
 
 // ===== 留言板 =====
 function loadGuestbookMessages() {
-    if (dbReady && dbClient) {
-        cloudSelectAll('guestbook').then(cloud => {
-            if (cloud && cloud.length > 0) { cacheSet('blog_guestbook', cloud); renderGuestbook(); }
-        }).catch(() => {});
-    }
     return cacheGet('blog_guestbook');
 }
 
@@ -794,7 +928,7 @@ function updateGuestbookFormUI() {
     }
 }
 
-function submitGuestbook() {
+async function submitGuestbook() {
     const user = getCurrentUser();
     if (!user) {
         guestbookHint.textContent = '⚠️ 请先登录后再留言';
@@ -803,8 +937,6 @@ function submitGuestbook() {
     const body = guestbookBody.value.trim();
     if (!body) { guestbookHint.textContent = '请输入留言内容'; return; }
 
-    const messages = loadGuestbookMessages();
-    const newId = genSafeId();
     const now = new Date();
     const timeStr = now.getFullYear() + '-' +
         String(now.getMonth() + 1).padStart(2, '0') + '-' +
@@ -812,19 +944,45 @@ function submitGuestbook() {
         String(now.getHours()).padStart(2, '0') + ':' +
         String(now.getMinutes()).padStart(2, '0');
 
-    messages.push({ id: newId, username: user.username, user_id: user.id, body, time: timeStr });
-    saveGuestbookMessages(messages);
+    const newMsg = { id: genSafeId(), username: user.username, user_id: user.id, body, time: timeStr };
+
+    // 先添加到本地缓存，立即显示
+    const local = cacheGet('blog_guestbook');
+    local.push(newMsg);
+    cacheSet('blog_guestbook', local);
     renderGuestbook();
     guestbookBody.value = '';
     guestbookHint.textContent = '✅ 留言发表成功！';
     setTimeout(() => { guestbookHint.textContent = ''; }, 2000);
+
+    // 上传到云端，然后从云端拉取最新数据（包含其他用户的留言）
+    if (dbReady && dbClient) {
+        try {
+            await dbClient.from('guestbook').upsert(newMsg);
+            const { data: cloud } = await dbClient.from('guestbook').select('*');
+            if (cloud && cloud.length > 0) {
+                cacheSet('blog_guestbook', cloud);
+                renderGuestbook();
+            }
+        } catch (e) {
+            console.warn('☁️ 留言同步失败:', e.message);
+        }
+    }
 }
 
 function deleteGuestbookMessage(msgId) {
-    let messages = loadGuestbookMessages();
+    // 先从本地缓存移除，立即更新 UI
+    let messages = cacheGet('blog_guestbook');
     messages = messages.filter(m => m.id !== msgId);
-    saveGuestbookMessages(messages);
+    cacheSet('blog_guestbook', messages);
     renderGuestbook();
+
+    // 从云端删除
+    if (dbReady && dbClient) {
+        dbClient.from('guestbook').delete().eq('id', msgId).then(({ error }) => {
+            if (error) console.warn('☁️ 删除留言失败:', error.message);
+        }).catch(() => {});
+    }
 }
 
 btnGuestbookSubmit.addEventListener('click', submitGuestbook);
@@ -866,12 +1024,24 @@ function closeAuthModal() {
     document.body.style.overflow = '';
 }
 
-function handleLogin() {
+async function handleLogin() {
     const username = loginUsername.value.trim();
     const password = loginPassword.value.trim();
 
     if (!username) { loginHint.textContent = '请输入用户名'; loginHint.className = 'auth-hint error'; return; }
     if (!password) { loginHint.textContent = '请输入密码'; loginHint.className = 'auth-hint error'; return; }
+
+    // 先从云端拉取最新用户数据（确保能看到其他设备注册的账号）
+    if (dbReady && dbClient) {
+        loginHint.textContent = '🔄 正在验证...';
+        loginHint.className = 'auth-hint';
+        try {
+            const cloudUsers = await cloudSelectAll('users');
+            if (cloudUsers && cloudUsers.length > 0) {
+                cacheSet('blog_users', cloudUsers);
+            }
+        } catch (e) { /* 云端不可用时回退本地 */ }
+    }
 
     const users = loadUsers();
     const user = users.find(u => u.username === username && u.password === simpleHash(password));
@@ -917,8 +1087,18 @@ function handleRegister() {
         created_at: new Date().toISOString().split('T')[0]
     };
 
+    // 先添加到本地缓存
     users.push(newUser);
-    saveUsers(users);
+    cacheSet('blog_users', users);
+
+    // 只 upsert 新用户到云端，然后从云端拉取全量数据
+    if (dbReady && dbClient) {
+        dbClient.from('users').upsert(newUser).then(() => {
+            cloudSelectAll('users').then(cloud => {
+                if (cloud && cloud.length > 0) cacheSet('blog_users', cloud);
+            }).catch(() => {});
+        }).catch(() => {});
+    }
 
     registerHint.textContent = '✅ 注册成功！正在自动登录...';
     registerHint.className = 'auth-hint success';
