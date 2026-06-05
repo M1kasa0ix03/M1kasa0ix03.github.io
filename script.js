@@ -18,22 +18,51 @@ try {
     console.warn('⚠️ Supabase 连接失败，使用本地存储');
 }
 
-// ===== 通用存储层（云端优先，本地兜底） =====
-async function dbFetch(table, query = 'select', body = null) {
+// ===== 通用存储层 =====
+// 云端操作：增删改查
+async function cloudInsert(table, row) {
+    if (!dbReady || !dbClient) return;
+    try { const { error } = await dbClient.from(table).insert(row); if (error) console.warn('☁️ insert err', table, error.message); } catch(e) {}
+}
+async function cloudDelete(table, id) {
+    if (!dbReady || !dbClient) return;
+    try { await dbClient.from(table).delete().eq('id', id); } catch(e) {}
+}
+async function cloudSelectAll(table) {
     if (!dbReady || !dbClient) return null;
-    try {
-        let req;
-        if (query === 'select') req = dbClient.from(table).select('*');
-        else if (query === 'insert') req = dbClient.from(table).insert(body).select();
-        else if (query === 'delete') req = dbClient.from(table).delete().eq('id', body);
-        
-        const { data, error } = await req;
-        if (error) throw error;
-        return data;
-    } catch (e) {
-        console.warn('☁️ DB 错误 (' + table + '):', e.message);
-        return null;
+    try { const { data, error } = await dbClient.from(table).select('*'); if (error) throw error; return data; } catch(e) { return null; }
+}
+
+// 本地缓存读写
+function cacheGet(key) { try { const d = localStorage.getItem(key); return d ? JSON.parse(d) : []; } catch(e) { return []; } }
+function cacheSet(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+
+// 云端优先写入：写本地 + 写云端（upsert 策略，不删已有数据）
+function saveAndSync(key, table, data) {
+    cacheSet(key, data);
+    if (dbReady && dbClient) {
+        // 逐条 upsert：如果 id 已存在则更新，否则插入
+        data.forEach(r => {
+            dbClient.from(table).upsert(r).then(({ error }) => {
+                if (error) console.warn('☁️ upsert err', table, error.message);
+            }).catch(() => {});
+        });
     }
+}
+
+// 云端优先加载：返回本地数据，同时从云端刷新
+function loadAndSync(key, table, callback) {
+    const local = cacheGet(key);
+    // 后台从云端拉取
+    if (dbReady && dbClient) {
+        cloudSelectAll(table).then(cloud => {
+            if (cloud && cloud.length > 0) {
+                cacheSet(key, cloud);
+                if (callback) callback(cloud);
+            }
+        }).catch(() => {});
+    }
+    return local;
 }
 
 // ===== 用户系统（云端 + 本地同步） =====
@@ -47,25 +76,13 @@ function simpleHash(str) {
     return 'bh_' + Math.abs(hash).toString(36);
 }
 
-function loadUsers() {
-    try {
-        const data = localStorage.getItem('blog_users');
-        return data ? JSON.parse(data) : [];
-    } catch (e) { return []; }
-}
-function saveUsers(users) { localStorage.setItem('blog_users', JSON.stringify(users)); syncToCloud('users', users); }
+function loadUsers() { return cacheGet('blog_users'); }
+function saveUsers(users) { saveAndSync('blog_users', 'users', users); }
 
 function initDefaultAdmin() {
     let users = loadUsers();
-    // 如果没有管理员，创建默认管理员账号
     if (!users.some(u => u.role === 'admin')) {
-        users.unshift({
-            id: 1,
-            username: 'M1kasa',
-            password: simpleHash('admin123'),
-            role: 'admin',
-            createdAt: '2026-06-05'
-        });
+        users.unshift({ id: 1, username: 'M1kasa', password: simpleHash('admin123'), role: 'admin', createdAt: '2026-06-05' });
         saveUsers(users);
         console.log('✅ 默认管理员已创建: M1kasa / admin123');
     }
@@ -74,83 +91,31 @@ function initDefaultAdmin() {
 // ===== 访客记录 =====
 function getTimeStr() {
     const now = new Date();
-    return now.getFullYear() + '-' +
-        String(now.getMonth() + 1).padStart(2, '0') + '-' +
-        String(now.getDate()).padStart(2, '0') + ' ' +
-        String(now.getHours()).padStart(2, '0') + ':' +
-        String(now.getMinutes()).padStart(2, '0') + ':' +
-        String(now.getSeconds()).padStart(2, '0');
+    return now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0') + ' ' +
+        String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0');
 }
 
-function loadVisits() {
-    try { const data = localStorage.getItem('blog_visits'); return data ? JSON.parse(data) : []; } catch (e) { return []; }
-}
+function loadVisits() { return cacheGet('blog_visits'); }
+function saveVisits(visits) { saveAndSync('blog_visits', 'visits', visits); }
 
-function saveVisits(visits) {
-    localStorage.setItem('blog_visits', JSON.stringify(visits));
-    // 异步同步到云端
-    syncToCloud('visits', visits);
-}
-
-async function syncToCloud(table, data) {
-    if (!dbReady) return;
-    // 简单策略：全量覆盖式同步
-    try {
-        // 先清空云端
-        const existing = await dbFetch(table, 'select');
-        if (existing) {
-            for (const row of existing) {
-                await dbClient.from(table).delete().eq('id', row.id);
-            }
-        }
-        // 再全量写入
-        for (const row of data) {
-            await dbClient.from(table).insert(row);
-        }
-    } catch (e) { /* 静默失败 */ }
-}
-
-async function syncFromCloud(table) {
-    if (!dbReady) return null;
-    try {
-        const { data, error } = await dbClient.from(table).select('*');
-        if (error) throw error;
-        return data;
-    } catch (e) { return null; }
-}
-
+// 云端拉取并更新所有数据（页面加载时调用）
 async function pullFromCloud() {
     if (!dbReady) return;
     try {
-        // 拉取访客记录
-        const cloudVisits = await syncFromCloud('visits');
-        if (cloudVisits && cloudVisits.length > 0) {
-            const local = loadVisits();
-            if (cloudVisits.length >= local.length) {
-                localStorage.setItem('blog_visits', JSON.stringify(cloudVisits));
+        const tables = ['visits', 'guestbook', 'comments', 'users', 'user_posts'];
+        for (const t of tables) {
+            const cloud = await cloudSelectAll(t);
+            if (cloud && cloud.length > 0) {
+                const key = t === 'user_posts' ? 'blog_user_posts' : 'blog_' + t;
+                const local = cacheGet(key);
+                if (cloud.length >= local.length) cacheSet(key, cloud);
             }
         }
-        // 拉取留言板
-        const cloudGuestbook = await syncFromCloud('guestbook');
-        if (cloudGuestbook && cloudGuestbook.length > 0) {
-            const local = JSON.parse(localStorage.getItem('blog_guestbook') || '[]');
-            if (cloudGuestbook.length >= local.length) {
-                localStorage.setItem('blog_guestbook', JSON.stringify(cloudGuestbook));
-            }
-        }
-        // 拉取评论
-        const cloudComments = await syncFromCloud('comments');
-        if (cloudComments && cloudComments.length > 0) {
-            localStorage.setItem('blog_comments_all', JSON.stringify(cloudComments));
-        }
-        // 重新渲染
         renderGuestbook();
         renderVisitorsPanel();
         filterPosts();
-        console.log('☁️ 云端数据同步完成');
-    } catch (e) {
-        console.log('☁️ 云端同步跳过:', e.message);
-    }
+        console.log('☁️ 云端数据已同步');
+    } catch (e) { console.log('☁️ 同步跳过:', e.message); }
 }
 
 function recordVisit(user) {
@@ -261,8 +226,7 @@ function loadUserPosts() {
 }
 
 function saveUserPosts(posts) {
-    localStorage.setItem('blog_user_posts', JSON.stringify(posts));
-    syncToCloud('user_posts', posts);
+    saveAndSync('blog_user_posts', 'user_posts', posts);
 }
 
 function getAllPosts() {
@@ -513,8 +477,7 @@ function loadComments(postId) {
 }
 
 function saveComments(postId, comments) {
-    localStorage.setItem('blog_comments_' + postId, JSON.stringify(comments));
-    syncToCloud('comments', comments);
+    saveAndSync('blog_comments_' + postId, 'comments', comments);
 }
 
 function renderComments(postId) {
@@ -760,8 +723,7 @@ function loadGuestbookMessages() {
 }
 
 function saveGuestbookMessages(messages) {
-    localStorage.setItem('blog_guestbook', JSON.stringify(messages));
-    syncToCloud('guestbook', messages);
+    saveAndSync('blog_guestbook', 'guestbook', messages);
 }
 
 function renderGuestbook() {
