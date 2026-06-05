@@ -1,9 +1,42 @@
 /* ============================================
-   个人博客 - 交互脚本
+   个人博客 - 交互脚本（Supabase 云存储版）
    Author: M1kasa
    ============================================ */
 
-// ===== 用户系统 =====
+// ===== Supabase 配置 =====
+const SUPABASE_URL = 'https://evvmlhqfwjonkznjaibz.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV2dm1saHFmd2pvbmt6bmphaWJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NTE3ODksImV4cCI6MjA5NjIyNzc4OX0.c-W6ckwKpL_TO93k_6mcVsZNGFX7gok3uEI5rwLLm8w';
+
+let supabase = null;
+let dbReady = false;
+
+try {
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    dbReady = true;
+    console.log('☁️ Supabase 云数据库已连接');
+} catch (e) {
+    console.warn('⚠️ Supabase 连接失败，使用本地存储');
+}
+
+// ===== 通用存储层（云端优先，本地兜底） =====
+async function dbFetch(table, query = 'select', body = null) {
+    if (!dbReady || !supabase) return null;
+    try {
+        let req;
+        if (query === 'select') req = supabase.from(table).select('*');
+        else if (query === 'insert') req = supabase.from(table).insert(body).select();
+        else if (query === 'delete') req = supabase.from(table).delete().eq('id', body);
+        
+        const { data, error } = await req;
+        if (error) throw error;
+        return data;
+    } catch (e) {
+        console.warn('☁️ DB 错误 (' + table + '):', e.message);
+        return null;
+    }
+}
+
+// ===== 用户系统（云端 + 本地同步） =====
 function simpleHash(str) {
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -18,14 +51,9 @@ function loadUsers() {
     try {
         const data = localStorage.getItem('blog_users');
         return data ? JSON.parse(data) : [];
-    } catch (e) {
-        return [];
-    }
+    } catch (e) { return []; }
 }
-
-function saveUsers(users) {
-    localStorage.setItem('blog_users', JSON.stringify(users));
-}
+function saveUsers(users) { localStorage.setItem('blog_users', JSON.stringify(users)); syncToCloud('users', users); }
 
 function initDefaultAdmin() {
     let users = loadUsers();
@@ -55,14 +83,74 @@ function getTimeStr() {
 }
 
 function loadVisits() {
-    try {
-        const data = localStorage.getItem('blog_visits');
-        return data ? JSON.parse(data) : [];
-    } catch (e) { return []; }
+    try { const data = localStorage.getItem('blog_visits'); return data ? JSON.parse(data) : []; } catch (e) { return []; }
 }
 
 function saveVisits(visits) {
     localStorage.setItem('blog_visits', JSON.stringify(visits));
+    // 异步同步到云端
+    syncToCloud('visits', visits);
+}
+
+async function syncToCloud(table, data) {
+    if (!dbReady) return;
+    // 简单策略：全量覆盖式同步
+    try {
+        // 先清空云端
+        const existing = await dbFetch(table, 'select');
+        if (existing) {
+            for (const row of existing) {
+                await supabase.from(table).delete().eq('id', row.id);
+            }
+        }
+        // 再全量写入
+        for (const row of data) {
+            await supabase.from(table).insert(row);
+        }
+    } catch (e) { /* 静默失败 */ }
+}
+
+async function syncFromCloud(table) {
+    if (!dbReady) return null;
+    try {
+        const { data, error } = await supabase.from(table).select('*');
+        if (error) throw error;
+        return data;
+    } catch (e) { return null; }
+}
+
+async function pullFromCloud() {
+    if (!dbReady) return;
+    try {
+        // 拉取访客记录
+        const cloudVisits = await syncFromCloud('visits');
+        if (cloudVisits && cloudVisits.length > 0) {
+            const local = loadVisits();
+            if (cloudVisits.length >= local.length) {
+                localStorage.setItem('blog_visits', JSON.stringify(cloudVisits));
+            }
+        }
+        // 拉取留言板
+        const cloudGuestbook = await syncFromCloud('guestbook');
+        if (cloudGuestbook && cloudGuestbook.length > 0) {
+            const local = JSON.parse(localStorage.getItem('blog_guestbook') || '[]');
+            if (cloudGuestbook.length >= local.length) {
+                localStorage.setItem('blog_guestbook', JSON.stringify(cloudGuestbook));
+            }
+        }
+        // 拉取评论
+        const cloudComments = await syncFromCloud('comments');
+        if (cloudComments && cloudComments.length > 0) {
+            localStorage.setItem('blog_comments_all', JSON.stringify(cloudComments));
+        }
+        // 重新渲染
+        renderGuestbook();
+        renderVisitorsPanel();
+        filterPosts();
+        console.log('☁️ 云端数据同步完成');
+    } catch (e) {
+        console.log('☁️ 云端同步跳过:', e.message);
+    }
 }
 
 function recordVisit(user) {
@@ -174,6 +262,7 @@ function loadUserPosts() {
 
 function saveUserPosts(posts) {
     localStorage.setItem('blog_user_posts', JSON.stringify(posts));
+    syncToCloud('user_posts', posts);
 }
 
 function getAllPosts() {
@@ -425,6 +514,7 @@ function loadComments(postId) {
 
 function saveComments(postId, comments) {
     localStorage.setItem('blog_comments_' + postId, JSON.stringify(comments));
+    syncToCloud('comments', comments);
 }
 
 function renderComments(postId) {
@@ -671,6 +761,7 @@ function loadGuestbookMessages() {
 
 function saveGuestbookMessages(messages) {
     localStorage.setItem('blog_guestbook', JSON.stringify(messages));
+    syncToCloud('guestbook', messages);
 }
 
 function renderGuestbook() {
@@ -1048,8 +1139,11 @@ function init() {
     renderVisitorsPanel();
     animateStats();
 
+    // 从云端拉取数据（异步，后台静默进行）
+    pullFromCloud();
+
+    console.log('☁️ 数据同步: 本地 + Supabase 云端');
     console.log('🔐 默认管理员: M1kasa / admin123');
-    console.log('👤 登录后即可评论留言 | 管理员可发布文章');
 
     // 初始滚动渐入
     setTimeout(() => {
