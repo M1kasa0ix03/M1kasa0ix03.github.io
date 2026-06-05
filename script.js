@@ -102,7 +102,7 @@ function saveVisits(visits) { saveAndSync('blog_visits', 'visits', visits); }
 async function pullFromCloud() {
     if (!dbReady) return;
     try {
-        const tables = ['visits', 'guestbook', 'comments', 'users', 'user_posts'];
+        const tables = ['visits', 'guestbook', 'users', 'user_posts'];
         for (const t of tables) {
             const cloud = await cloudSelectAll(t);
             if (cloud && cloud.length > 0) {
@@ -110,6 +110,18 @@ async function pullFromCloud() {
                 const local = cacheGet(key);
                 if (cloud.length >= local.length) cacheSet(key, cloud);
             }
+        }
+        // 评论特殊处理：按 post_id 分发到各篇文章的本地缓存
+        const cloudComments = await cloudSelectAll('comments');
+        if (cloudComments && cloudComments.length > 0) {
+            cacheSet('blog_comments_all', cloudComments);
+            const byPost = {};
+            cloudComments.forEach(c => {
+                const k = 'blog_comments_' + c.post_id;
+                if (!byPost[k]) byPost[k] = [];
+                byPost[k].push(c);
+            });
+            Object.entries(byPost).forEach(([k, v]) => cacheSet(k, v));
         }
         renderGuestbook();
         renderVisitorsPanel();
@@ -217,12 +229,12 @@ const blogPosts = [
 
 // ===== 加载用户文章 =====
 function loadUserPosts() {
-    try {
-        const data = localStorage.getItem('blog_user_posts');
-        return data ? JSON.parse(data) : [];
-    } catch (e) {
-        return [];
+    if (dbReady && dbClient) {
+        cloudSelectAll('user_posts').then(cloud => {
+            if (cloud && cloud.length > 0) { cacheSet('blog_user_posts', cloud); filterPosts(); }
+        }).catch(() => {});
     }
+    return cacheGet('blog_user_posts');
 }
 
 function saveUserPosts(posts) {
@@ -468,12 +480,17 @@ document.addEventListener('keydown', (e) => {
 
 // ===== 评论区 =====
 function loadComments(postId) {
-    try {
-        const data = localStorage.getItem('blog_comments_' + postId);
-        return data ? JSON.parse(data) : [];
-    } catch (e) {
-        return [];
+    const key = 'blog_comments_' + postId;
+    // 后台从云端刷新该文章评论
+    if (dbReady && dbClient) {
+        dbClient.from('comments').select('*').eq('post_id', postId).then(({ data, error }) => {
+            if (!error && data && data.length > 0) {
+                cacheSet(key, data);
+                if (currentPostId === postId) renderComments(postId);
+            }
+        }).catch(() => {});
     }
+    return cacheGet(key);
 }
 
 function saveComments(postId, comments) {
@@ -528,7 +545,7 @@ function submitComment() {
     if (!currentPostId) return;
 
     const comments = loadComments(currentPostId);
-    const newId = comments.length > 0 ? Math.max(...comments.map(c => c.id)) + 1 : 1;
+    const newId = Date.now(); // 用时间戳确保全局唯一
     const now = new Date();
     const timeStr = now.getFullYear() + '-' +
         String(now.getMonth() + 1).padStart(2, '0') + '-' +
@@ -714,12 +731,12 @@ function updateCommentFormUI() {
 
 // ===== 留言板 =====
 function loadGuestbookMessages() {
-    try {
-        const data = localStorage.getItem('blog_guestbook');
-        return data ? JSON.parse(data) : [];
-    } catch (e) {
-        return [];
+    if (dbReady && dbClient) {
+        cloudSelectAll('guestbook').then(cloud => {
+            if (cloud && cloud.length > 0) { cacheSet('blog_guestbook', cloud); renderGuestbook(); }
+        }).catch(() => {});
     }
+    return cacheGet('blog_guestbook');
 }
 
 function saveGuestbookMessages(messages) {
@@ -784,7 +801,7 @@ function submitGuestbook() {
     if (!body) { guestbookHint.textContent = '请输入留言内容'; return; }
 
     const messages = loadGuestbookMessages();
-    const newId = messages.length > 0 ? Math.max(...messages.map(m => m.id)) + 1 : 1;
+    const newId = Date.now(); // 用时间戳确保全局唯一
     const now = new Date();
     const timeStr = now.getFullYear() + '-' +
         String(now.getMonth() + 1).padStart(2, '0') + '-' +
