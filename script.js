@@ -82,7 +82,7 @@ function saveUsers(users) { saveAndSync('blog_users', 'users', users); }
 function initDefaultAdmin() {
     let users = loadUsers();
     if (!users.some(u => u.role === 'admin')) {
-        users.unshift({ id: 1, username: 'M1kasa', password: simpleHash('admin123'), role: 'admin', createdAt: '2026-06-05' });
+        users.unshift({ id: 1, username: 'M1kasa', password: simpleHash('admin123'), role: 'admin', created_at: '2026-06-05' });
         saveUsers(users);
         console.log('✅ 默认管理员已创建: M1kasa / admin123');
     }
@@ -135,13 +135,13 @@ function recordVisit(user) {
     const existing = visits.find(v => v.username === user.username);
     if (existing) {
         existing.count = (existing.count || 1) + 1;
-        existing.lastLogin = getTimeStr();
+        existing.last_login = getTimeStr();
     } else {
         visits.push({
             username: user.username,
-            userId: user.id,
-            firstLogin: getTimeStr(),
-            lastLogin: getTimeStr(),
+            user_id: user.id,
+            first_login: getTimeStr(),
+            last_login: getTimeStr(),
             count: 1
         });
     }
@@ -166,7 +166,7 @@ function renderVisitorsPanel() {
         return;
     }
 
-    const sorted = [...visits].sort((a, b) => b.lastLogin.localeCompare(a.lastLogin));
+    const sorted = [...visits].sort((a, b) => (b.last_login || '').localeCompare(a.last_login || ''));
 
     tbody.innerHTML = sorted.map(v => `
         <tr>
@@ -176,7 +176,7 @@ function renderVisitorsPanel() {
                     ${escapeHtml(v.username)}
                 </div>
             </td>
-            <td>${v.lastLogin}</td>
+            <td>${v.last_login || v.lastLogin}</td>
             <td><span class="visit-count">${v.count}</span></td>
         </tr>
     `).join('');
@@ -505,10 +505,10 @@ function renderComments(postId) {
         commentsList.innerHTML = comments.map(c => `
             <div class="comment-item">
                 <div class="comment-item-header">
-                    <span class="comment-item-name">${escapeHtml(c.name)}</span>
+                    <span class="comment-item-name">${escapeHtml(c.username)}</span>
                     <div style="display:flex;align-items:center;gap:10px;">
                         <span class="comment-item-time">${c.time}</span>
-                        ${(isAdmin() || (getCurrentUser() && getCurrentUser().id === c.userId)) ? `<button class="comment-item-delete" data-comment-id="${c.id}" title="删除">🗑</button>` : ''}
+                        ${(isAdmin() || (getCurrentUser() && getCurrentUser().id === c.user_id)) ? `<button class="comment-item-delete" data-comment-id="${c.id}" title="删除">🗑</button>` : ''}
                     </div>
                 </div>
                 <p class="comment-item-body">${escapeHtml(c.body)}</p>
@@ -553,7 +553,7 @@ function submitComment() {
         String(now.getHours()).padStart(2, '0') + ':' +
         String(now.getMinutes()).padStart(2, '0');
 
-    comments.push({ id: newId, name: user.username, userId: user.id, body, time: timeStr });
+    comments.push({ id: newId, username: user.username, user_id: user.id, post_id: currentPostId, body, time: timeStr });
     saveComments(currentPostId, comments);
     renderComments(currentPostId);
     commentBody.value = '';
@@ -754,12 +754,12 @@ function renderGuestbook() {
             <div class="guestbook-item">
                 <div class="guestbook-item-header">
                     <div class="guestbook-item-user">
-                        <div class="guestbook-item-avatar">${escapeHtml(m.name).charAt(0).toUpperCase()}</div>
-                        <span class="guestbook-item-name">${escapeHtml(m.name)}</span>
+                        <div class="guestbook-item-avatar">${escapeHtml(m.username).charAt(0).toUpperCase()}</div>
+                        <span class="guestbook-item-name">${escapeHtml(m.username)}</span>
                     </div>
                     <div style="display:flex;align-items:center;gap:10px;">
                         <span class="guestbook-item-time">${m.time}</span>
-                        ${(isAdmin() || (getCurrentUser() && getCurrentUser().id === m.userId)) ? `<button class="guestbook-item-delete" data-gb-id="${m.id}" title="删除">🗑</button>` : ''}
+                        ${(isAdmin() || (getCurrentUser() && getCurrentUser().id === m.user_id)) ? `<button class="guestbook-item-delete" data-gb-id="${m.id}" title="删除">🗑</button>` : ''}
                     </div>
                 </div>
                 <p class="guestbook-item-body">${escapeHtml(m.body)}</p>
@@ -809,7 +809,7 @@ function submitGuestbook() {
         String(now.getHours()).padStart(2, '0') + ':' +
         String(now.getMinutes()).padStart(2, '0');
 
-    messages.push({ id: newId, name: user.username, userId: user.id, body, time: timeStr });
+    messages.push({ id: newId, username: user.username, user_id: user.id, body, time: timeStr });
     saveGuestbookMessages(messages);
     renderGuestbook();
     guestbookBody.value = '';
@@ -911,7 +911,7 @@ function handleRegister() {
         username,
         password: simpleHash(password),
         role: 'user',
-        createdAt: new Date().toISOString().split('T')[0]
+        created_at: new Date().toISOString().split('T')[0]
     };
 
     users.push(newUser);
