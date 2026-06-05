@@ -84,10 +84,11 @@ function initDefaultAdmin() {
         const admin = { id: 1, username: 'M1kasa', password: simpleHash('admin123'), role: 'admin', created_at: '2026-06-05' };
         users.unshift(admin);
         cacheSet('blog_users', users);
-        // 只 upsert 管理员到云端，不覆盖本地缓存
+        // 通过 RPC 注册管理员（数据库内部操作）
         if (dbReady && dbClient) {
-            dbClient.from('users').upsert(admin).then(({ error }) => {
+            dbClient.rpc('register_user', { p_username: 'M1kasa', p_password: simpleHash('admin123') }).then(({ error }) => {
                 if (error) console.warn('☁️ 管理员同步失败:', error.message);
+                else console.log('✅ 管理员已同步到云端');
             }).catch(() => {});
         }
         console.log('✅ 默认管理员已创建: M1kasa / admin123');
@@ -115,7 +116,7 @@ async function pullFromCloud() {
     }
     showSyncToast('☁️ 正在同步云端数据...', 'loading');
     try {
-        const tables = ['visits', 'guestbook', 'users', 'user_posts'];
+        const tables = ['visits', 'guestbook', 'user_posts'];
         for (const t of tables) {
             const cloud = await cloudSelectAll(t);
             if (cloud && cloud.length > 0) {
@@ -210,20 +211,9 @@ function recordVisit(user) {
             count: 1
         });
     }
-    // 更新本地缓存
+    // 仅本地存储（visits 表已启用 RLS，保护访客隐私）
     cacheSet('blog_visits', visits);
     renderVisitorsPanel();
-
-    // 只 upsert 当前用户的访问记录到云端
-    const record = existing || visits[visits.length - 1];
-    if (dbReady && dbClient && record) {
-        dbClient.from('visits').upsert(record).then(() => {
-            // 从云端拉取全量数据更新本地缓存
-            cloudSelectAll('visits').then(cloud => {
-                if (cloud && cloud.length > 0) cacheSet('blog_visits', cloud);
-            }).catch(() => {});
-        }).catch(() => {});
-    }
 }
 
 function renderVisitorsPanel() {
@@ -1031,25 +1021,42 @@ async function handleLogin() {
     if (!username) { loginHint.textContent = '请输入用户名'; loginHint.className = 'auth-hint error'; return; }
     if (!password) { loginHint.textContent = '请输入密码'; loginHint.className = 'auth-hint error'; return; }
 
-    // 先从云端拉取最新用户数据（确保能看到其他设备注册的账号）
+    loginHint.textContent = '🔄 正在验证...';
+    loginHint.className = 'auth-hint';
+
+    // 通过 RPC 函数在数据库内部验证密码，外部无法读取 users 表
     if (dbReady && dbClient) {
-        loginHint.textContent = '🔄 正在验证...';
-        loginHint.className = 'auth-hint';
         try {
-            const cloudUsers = await cloudSelectAll('users');
-            if (cloudUsers && cloudUsers.length > 0) {
-                cacheSet('blog_users', cloudUsers);
+            const { data: result, error } = await dbClient.rpc('login_user', {
+                p_username: username,
+                p_password: simpleHash(password)
+            });
+            if (error) throw error;
+            if (result && !result.error) {
+                const user = result;
+                setCurrentUser(user);
+                recordVisit(user);
+                loginHint.textContent = '✅ 登录成功！';
+                loginHint.className = 'auth-hint success';
+                setTimeout(() => {
+                    closeAuthModal();
+                    updateAuthUI();
+                    updateCommentFormUI();
+                    filterPosts();
+                }, 600);
+                return;
             }
-        } catch (e) { /* 云端不可用时回退本地 */ }
+        } catch (e) {
+            console.warn('☁️ 登录验证失败:', e.message);
+        }
     }
 
+    // 回退到本地缓存（断网情况）
     const users = loadUsers();
     const user = users.find(u => u.username === username && u.password === simpleHash(password));
-
     if (user) {
         setCurrentUser(user);
-        recordVisit(user);
-        loginHint.textContent = '✅ 登录成功！';
+        loginHint.textContent = '✅ 登录成功！（离线模式）';
         loginHint.className = 'auth-hint success';
         setTimeout(() => {
             closeAuthModal();
@@ -1057,13 +1064,14 @@ async function handleLogin() {
             updateCommentFormUI();
             filterPosts();
         }, 600);
-    } else {
-        loginHint.textContent = '❌ 用户名或密码错误';
-        loginHint.className = 'auth-hint error';
+        return;
     }
+
+    loginHint.textContent = '❌ 用户名或密码错误';
+    loginHint.className = 'auth-hint error';
 }
 
-function handleRegister() {
+async function handleRegister() {
     const username = regUsername.value.trim();
     const password = regPassword.value.trim();
     const passwordConfirm = regPasswordConfirm.value.trim();
@@ -1072,33 +1080,70 @@ function handleRegister() {
     if (!password || password.length < 6) { registerHint.textContent = '密码至少需要6个字符'; registerHint.className = 'auth-hint error'; return; }
     if (password !== passwordConfirm) { registerHint.textContent = '两次密码不一致'; registerHint.className = 'auth-hint error'; return; }
 
+    registerHint.textContent = '🔄 正在注册...';
+    registerHint.className = 'auth-hint';
+
+    const hashedPw = simpleHash(password);
+
+    // 通过 RPC 函数在数据库内部注册（避免 anon 直接操作 users 表）
+    if (dbReady && dbClient) {
+        try {
+            const { data: result, error } = await dbClient.rpc('register_user', {
+                p_username: username,
+                p_password: hashedPw
+            });
+            if (error) throw error;
+            if (result && result.error) {
+                registerHint.textContent = '❌ ' + result.error;
+                registerHint.className = 'auth-hint error';
+                return;
+            }
+            if (result && result.id) {
+                const newUser = result;
+                // 保存到本地缓存
+                const users = loadUsers();
+                users.push(newUser);
+                cacheSet('blog_users', users);
+
+                registerHint.textContent = '✅ 注册成功！正在自动登录...';
+                registerHint.className = 'auth-hint success';
+
+                setTimeout(() => {
+                    setCurrentUser(newUser);
+                    recordVisit(newUser);
+                    closeAuthModal();
+                    updateAuthUI();
+                    updateCommentFormUI();
+                    filterPosts();
+                }, 800);
+                return;
+            }
+        } catch (e) {
+            console.warn('☁️ 注册失败:', e.message);
+        }
+    }
+
+    // 回退到本地注册（断网情况）
     const users = loadUsers();
     if (users.some(u => u.username === username)) {
         registerHint.textContent = '该用户名已被注册';
         registerHint.className = 'auth-hint error';
         return;
     }
-
-    const newUser = {
-        id: genSafeId(),
-        username,
-        password: simpleHash(password),
-        role: 'user',
-        created_at: new Date().toISOString().split('T')[0]
-    };
-
-    // 先添加到本地缓存
+    const newUser = { id: genSafeId(), username, password: hashedPw, role: 'user', created_at: new Date().toISOString().split('T')[0] };
     users.push(newUser);
     cacheSet('blog_users', users);
-
-    // 只 upsert 新用户到云端，然后从云端拉取全量数据
-    if (dbReady && dbClient) {
-        dbClient.from('users').upsert(newUser).then(() => {
-            cloudSelectAll('users').then(cloud => {
-                if (cloud && cloud.length > 0) cacheSet('blog_users', cloud);
-            }).catch(() => {});
-        }).catch(() => {});
-    }
+    registerHint.textContent = '✅ 注册成功！（离线模式）';
+    registerHint.className = 'auth-hint success';
+    setTimeout(() => {
+        setCurrentUser(newUser);
+        recordVisit(newUser);
+        closeAuthModal();
+        updateAuthUI();
+        updateCommentFormUI();
+        filterPosts();
+    }, 800);
+}
 
     registerHint.textContent = '✅ 注册成功！正在自动登录...';
     registerHint.className = 'auth-hint success';
