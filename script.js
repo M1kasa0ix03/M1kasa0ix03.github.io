@@ -1145,19 +1145,6 @@ async function handleRegister() {
     }, 800);
 }
 
-    registerHint.textContent = '✅ 注册成功！正在自动登录...';
-    registerHint.className = 'auth-hint success';
-
-    setTimeout(() => {
-        setCurrentUser(newUser);
-        recordVisit(newUser);
-        closeAuthModal();
-        updateAuthUI();
-        updateCommentFormUI();
-        filterPosts();
-    }, 800);
-}
-
 function handleLogout() {
     if (confirm('确定要退出登录吗？')) {
         setCurrentUser(null);
