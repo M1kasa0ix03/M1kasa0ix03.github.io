@@ -1,0 +1,9 @@
+# C++ 源文件和文档 — 仅在私人仓库保留
+*.cpp
+*.c
+*.exe
+*.bat
+navigation.html
+super_mario.html
+*.md
+blog/
