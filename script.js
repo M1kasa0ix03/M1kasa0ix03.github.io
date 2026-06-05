@@ -98,7 +98,10 @@ function getTimeStr() {
 function loadVisits() { return cacheGet('blog_visits'); }
 function saveVisits(visits) { saveAndSync('blog_visits', 'visits', visits); }
 
-// 云端拉取并更新所有数据（页面加载时调用）
+// 生成安全的整数 ID（PostgreSQL INTEGER 范围：1 ~ 2147483647）
+function genSafeId() {
+    return Math.floor(Math.random() * 2000000000) + 1;
+}
 async function pullFromCloud() {
     if (!dbReady) return;
     try {
@@ -545,7 +548,7 @@ function submitComment() {
     if (!currentPostId) return;
 
     const comments = loadComments(currentPostId);
-    const newId = Date.now(); // 用时间戳确保全局唯一
+    const newId = genSafeId();
     const now = new Date();
     const timeStr = now.getFullYear() + '-' +
         String(now.getMonth() + 1).padStart(2, '0') + '-' +
@@ -614,7 +617,7 @@ function publishPost() {
     if (!body) { editorHint.textContent = '⚠️ 请输入文章内容'; return; }
 
     const userPosts = loadUserPosts();
-    const newId = Date.now();
+    const newId = genSafeId();
     const now = new Date();
     const dateStr = now.getFullYear() + '-' +
         String(now.getMonth() + 1).padStart(2, '0') + '-' +
@@ -801,7 +804,7 @@ function submitGuestbook() {
     if (!body) { guestbookHint.textContent = '请输入留言内容'; return; }
 
     const messages = loadGuestbookMessages();
-    const newId = Date.now(); // 用时间戳确保全局唯一
+    const newId = genSafeId();
     const now = new Date();
     const timeStr = now.getFullYear() + '-' +
         String(now.getMonth() + 1).padStart(2, '0') + '-' +
@@ -907,7 +910,7 @@ function handleRegister() {
     }
 
     const newUser = {
-        id: Date.now(),
+        id: genSafeId(),
         username,
         password: simpleHash(password),
         role: 'user',
