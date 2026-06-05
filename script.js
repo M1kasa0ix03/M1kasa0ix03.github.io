@@ -228,6 +228,24 @@ refactor: 重构数据处理模块</code></pre>
     }
 ];
 
+// ===== 加载用户文章 =====
+function loadUserPosts() {
+    try {
+        const data = localStorage.getItem('blog_user_posts');
+        return data ? JSON.parse(data) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveUserPosts(posts) {
+    localStorage.setItem('blog_user_posts', JSON.stringify(posts));
+}
+
+function getAllPosts() {
+    return [...blogPosts, ...loadUserPosts()];
+}
+
 // ===== 状态管理 =====
 let currentTag = 'all';
 let visibleCount = 4;
@@ -243,15 +261,38 @@ const postModal = document.getElementById('postModal');
 const modalOverlay = document.getElementById('modalOverlay');
 const modalClose = document.getElementById('modalClose');
 const postDetail = document.getElementById('postDetail');
+const commentsSection = document.getElementById('commentsSection');
+const commentsList = document.getElementById('commentsList');
+const commentName = document.getElementById('commentName');
+const commentBody = document.getElementById('commentBody');
+const btnSubmitComment = document.getElementById('btnSubmitComment');
+const commentHint = document.getElementById('commentHint');
 const backToTop = document.getElementById('backToTop');
 const themeToggle = document.getElementById('themeToggle');
 const menuToggle = document.getElementById('menuToggle');
 const navMenu = document.getElementById('navMenu');
 const navbar = document.getElementById('navbar');
 
+// 编辑器 DOM
+const editorModal = document.getElementById('editorModal');
+const editorOverlay = document.getElementById('editorOverlay');
+const editorClose = document.getElementById('editorClose');
+const btnWriteArticle = document.getElementById('btnWriteArticle');
+const editTitle = document.getElementById('editTitle');
+const editExcerpt = document.getElementById('editExcerpt');
+const editTag = document.getElementById('editTag');
+const editEmoji = document.getElementById('editEmoji');
+const editBody = document.getElementById('editBody');
+const editorToolbar = document.getElementById('editorToolbar');
+const btnPublish = document.getElementById('btnPublish');
+const editorHint = document.getElementById('editorHint');
+
+let currentPostId = null; // 当前打开的文章 ID
+
 // ===== 渲染文章卡片 =====
 function renderPosts(posts) {
     blogGrid.innerHTML = '';
+    const userPosts = loadUserPosts();
     if (posts.length === 0) {
         blogGrid.innerHTML = `
             <div style="grid-column: 1/-1; text-align: center; padding: 60px 20px; color: var(--text-muted);">
@@ -261,9 +302,11 @@ function renderPosts(posts) {
         return;
     }
     posts.forEach((post, index) => {
+        const comments = loadComments(post.id);
         const card = document.createElement('div');
         card.className = 'blog-card fade-in';
         card.style.transitionDelay = `${index * 0.08}s`;
+        const isUserPost = userPosts.some(p => p.id === post.id);
         card.innerHTML = `
             <div class="card-image">
                 <span class="card-emoji">${post.emoji}</span>
@@ -277,9 +320,20 @@ function renderPosts(posts) {
                 <div class="card-footer">
                     <span><i class="far fa-calendar"></i> ${post.date}</span>
                     <span><i class="far fa-clock"></i> ${post.readTime}</span>
+                    <span><i class="far fa-comment"></i> ${comments.length}</span>
                 </div>
-            </div>`;
-        card.addEventListener('click', () => openPost(post));
+            </div>
+            ${isUserPost ? `<button class="card-delete-btn" title="删除文章"><i class="fas fa-trash"></i></button>` : ''}`;
+        card.addEventListener('click', (e) => {
+            if (e.target.closest('.card-delete-btn')) return;
+            openPost(post);
+        });
+        if (isUserPost) {
+            card.querySelector('.card-delete-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                deletePost(post.id);
+            });
+        }
         blogGrid.appendChild(card);
     });
 
@@ -292,9 +346,8 @@ function renderPosts(posts) {
 // ===== 筛选文章 =====
 function filterPosts() {
     const query = searchInput.value.toLowerCase().trim();
-    let filtered = blogPosts;
-
-    if (currentTag !== 'all') {
+    const allPosts = getAllPosts();
+    let filtered = allPosts;
         filtered = filtered.filter(p => p.tags.includes(currentTag));
     }
 
@@ -323,7 +376,8 @@ function filterPosts() {
 // ===== 加载更多 =====
 loadMoreBtn.addEventListener('click', () => {
     const filteredIds = JSON.parse(loadMoreDiv.dataset.filtered || '[]');
-    const filtered = blogPosts.filter(p => filteredIds.includes(p.id));
+    const allPosts = getAllPosts();
+    const filtered = allPosts.filter(p => filteredIds.includes(p.id));
     visibleCount += postsPerPage;
     const visible = filtered.slice(0, visibleCount);
     renderPosts(visible);
@@ -348,6 +402,7 @@ tagFilters.addEventListener('click', (e) => {
 
 // ===== 文章弹窗 =====
 function openPost(post) {
+    currentPostId = post.id;
     postDetail.innerHTML = `
         <h1>${post.title}</h1>
         <div class="post-meta">
@@ -356,22 +411,234 @@ function openPost(post) {
             <span>${post.tags.map(t => `<span style="color:var(--accent);">#${t}</span>`).join(' ')}</span>
         </div>
         <div class="post-body">${post.body}</div>`;
+    renderComments(post.id);
+    // 清空评论表单
+    commentName.value = '';
+    commentBody.value = '';
+    commentHint.textContent = '';
     postModal.classList.add('active');
     document.body.style.overflow = 'hidden';
+    // 滚动到顶部
+    postModal.querySelector('.modal-content').scrollTop = 0;
 }
 
 function closePost() {
     postModal.classList.remove('active');
     document.body.style.overflow = '';
+    currentPostId = null;
 }
 
 modalClose.addEventListener('click', closePost);
 modalOverlay.addEventListener('click', closePost);
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && postModal.classList.contains('active')) {
-        closePost();
+    if (e.key === 'Escape') {
+        if (editorModal.classList.contains('active')) {
+            closeEditor();
+        } else if (postModal.classList.contains('active')) {
+            closePost();
+        }
     }
 });
+
+// ===== 评论区 =====
+function loadComments(postId) {
+    try {
+        const data = localStorage.getItem('blog_comments_' + postId);
+        return data ? JSON.parse(data) : [];
+    } catch (e) {
+        return [];
+    }
+}
+
+function saveComments(postId, comments) {
+    localStorage.setItem('blog_comments_' + postId, JSON.stringify(comments));
+}
+
+function renderComments(postId) {
+    const comments = loadComments(postId);
+    if (comments.length === 0) {
+        commentsList.innerHTML = '<p class="comments-empty">💭 还没有评论，来抢沙发吧~</p>';
+    } else {
+        commentsList.innerHTML = comments.map(c => `
+            <div class="comment-item">
+                <div class="comment-item-header">
+                    <span class="comment-item-name">${escapeHtml(c.name)}</span>
+                    <div style="display:flex;align-items:center;gap:10px;">
+                        <span class="comment-item-time">${c.time}</span>
+                        <button class="comment-item-delete" data-comment-id="${c.id}" title="删除">🗑</button>
+                    </div>
+                </div>
+                <p class="comment-item-body">${escapeHtml(c.body)}</p>
+            </div>
+        `).join('');
+
+        // 删除评论事件
+        commentsList.querySelectorAll('.comment-item-delete').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (confirm('确定要删除这条评论吗？')) {
+                    deleteComment(postId, parseInt(btn.dataset.commentId));
+                }
+            });
+        });
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function submitComment() {
+    const name = commentName.value.trim();
+    const body = commentBody.value.trim();
+
+    if (!name) { commentHint.textContent = '请输入昵称'; return; }
+    if (!body) { commentHint.textContent = '请输入评论内容'; return; }
+    if (!currentPostId) return;
+
+    const comments = loadComments(currentPostId);
+    const newId = comments.length > 0 ? Math.max(...comments.map(c => c.id)) + 1 : 1;
+    const now = new Date();
+    const timeStr = now.getFullYear() + '-' +
+        String(now.getMonth() + 1).padStart(2, '0') + '-' +
+        String(now.getDate()).padStart(2, '0') + ' ' +
+        String(now.getHours()).padStart(2, '0') + ':' +
+        String(now.getMinutes()).padStart(2, '0');
+
+    comments.push({ id: newId, name, body, time: timeStr });
+    saveComments(currentPostId, comments);
+    renderComments(currentPostId);
+    commentName.value = '';
+    commentBody.value = '';
+    commentHint.textContent = '✅ 评论发表成功！';
+    setTimeout(() => { commentHint.textContent = ''; }, 2000);
+
+    // 刷新文章卡片上的评论数
+    filterPosts();
+}
+
+function deleteComment(postId, commentId) {
+    let comments = loadComments(postId);
+    comments = comments.filter(c => c.id !== commentId);
+    saveComments(postId, comments);
+    renderComments(postId);
+    filterPosts();
+}
+
+btnSubmitComment.addEventListener('click', submitComment);
+// Enter 提交评论（Ctrl+Enter）
+commentBody.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) {
+        submitComment();
+    }
+});
+
+// ===== 写文章编辑器 =====
+function openEditor() {
+    editorModal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    editTitle.value = '';
+    editExcerpt.value = '';
+    editTag.value = '前端';
+    editEmoji.value = '🚀';
+    editBody.value = '';
+    editorHint.textContent = '';
+    editTitle.focus();
+}
+
+function closeEditor() {
+    editorModal.classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+function publishPost() {
+    const title = editTitle.value.trim();
+    const excerpt = editExcerpt.value.trim();
+    const tag = editTag.value;
+    const emoji = editEmoji.value;
+    const body = editBody.value.trim();
+
+    if (!title) { editorHint.textContent = '⚠️ 请输入文章标题'; return; }
+    if (!excerpt) { editorHint.textContent = '⚠️ 请输入文章摘要'; return; }
+    if (!body) { editorHint.textContent = '⚠️ 请输入文章内容'; return; }
+
+    const userPosts = loadUserPosts();
+    const newId = Date.now();
+    const now = new Date();
+    const dateStr = now.getFullYear() + '-' +
+        String(now.getMonth() + 1).padStart(2, '0') + '-' +
+        String(now.getDate()).padStart(2, '0');
+    const wordCount = body.replace(/<[^>]*>/g, '').length;
+    const readTime = Math.max(1, Math.ceil(wordCount / 400)) + ' 分钟';
+
+    const newPost = {
+        id: newId,
+        title,
+        excerpt,
+        tags: [tag],
+        date: dateStr,
+        readTime,
+        emoji,
+        body: `<p>${body.replace(/\n/g, '</p><p>')}</p>`
+    };
+
+    userPosts.unshift(newPost);
+    saveUserPosts(userPosts);
+
+    editorHint.textContent = '✅ 文章发布成功！';
+    setTimeout(() => {
+        closeEditor();
+        currentTag = 'all';
+        searchInput.value = '';
+        document.querySelectorAll('.tag-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector('.tag-btn[data-tag="all"]').classList.add('active');
+        filterPosts();
+        document.getElementById('blog').scrollIntoView({ behavior: 'smooth' });
+    }, 800);
+}
+
+function deletePost(postId) {
+    if (!confirm('确定要删除这篇文章吗？此操作不可撤销。')) return;
+    let userPosts = loadUserPosts();
+    userPosts = userPosts.filter(p => p.id !== postId);
+    saveUserPosts(userPosts);
+    // 也删除相关评论
+    localStorage.removeItem('blog_comments_' + postId);
+    filterPosts();
+}
+
+// 编辑器工具栏
+editorToolbar.addEventListener('click', (e) => {
+    if (e.target.tagName === 'BUTTON') {
+        const tag = e.target.dataset.tag;
+        const textarea = editBody;
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const selected = textarea.value.substring(start, end) || '内容';
+        let insert = '';
+
+        switch (tag) {
+            case 'h2': insert = `<h2>${selected}</h2>`; break;
+            case 'h3': insert = `<h3>${selected}</h3>`; break;
+            case 'p': insert = `<p>${selected}</p>`; break;
+            case 'strong': insert = `<strong>${selected}</strong>`; break;
+            case 'code': insert = `<code>${selected}</code>`; break;
+            case 'pre': insert = `<pre><code>${selected}</code></pre>`; break;
+            case 'ul': insert = `<ul>\n  <li>${selected}</li>\n  <li>项目2</li>\n</ul>`; break;
+            case 'ol': insert = `<ol>\n  <li>${selected}</li>\n  <li>项目2</li>\n</ol>`; break;
+        }
+
+        textarea.value = textarea.value.substring(0, start) + insert + textarea.value.substring(end);
+        textarea.focus();
+        textarea.setSelectionRange(start + insert.length, start + insert.length);
+    }
+});
+
+btnWriteArticle.addEventListener('click', openEditor);
+btnPublish.addEventListener('click', publishPost);
+editorClose.addEventListener('click', closeEditor);
+editorOverlay.addEventListener('click', closeEditor);
 
 // ===== 回到顶部 =====
 window.addEventListener('scroll', () => {

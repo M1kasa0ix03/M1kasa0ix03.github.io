@@ -38,6 +38,7 @@
             <p class="hero-desc">用代码构建世界，用文字记录成长。<br>这里是我的技术分享与生活感悟空间。</p>
             <div class="hero-buttons">
                 <a href="#blog" class="btn btn-primary">阅读文章 <i class="fas fa-arrow-right"></i></a>
+                <button class="btn btn-write" id="btnWriteArticle"><i class="fas fa-pen"></i> 写文章</button>
                 <a href="#about" class="btn btn-outline">了解更多</a>
             </div>
             <div class="hero-social">
@@ -210,6 +211,89 @@
             <article class="post-detail" id="postDetail">
                 <!-- JS 动态渲染 -->
             </article>
+            <!-- 评论区 -->
+            <div class="comments-section" id="commentsSection">
+                <h3 class="comments-title">💬 评论区</h3>
+                <div class="comments-list" id="commentsList">
+                    <!-- JS 动态渲染 -->
+                </div>
+                <div class="comment-form">
+                    <input type="text" id="commentName" placeholder="你的昵称" maxlength="30">
+                    <textarea id="commentBody" placeholder="写下你的想法..." rows="3" maxlength="500"></textarea>
+                    <button class="btn btn-primary" id="btnSubmitComment"><i class="fas fa-paper-plane"></i> 发表评论</button>
+                    <p class="comment-hint" id="commentHint"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 写文章弹窗 -->
+    <div class="editor-modal" id="editorModal">
+        <div class="editor-overlay" id="editorOverlay"></div>
+        <div class="editor-content" id="editorContent">
+            <div class="editor-header">
+                <h2>✍️ 撰写文章</h2>
+                <button class="editor-close" id="editorClose"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="editor-body">
+                <div class="editor-field">
+                    <label>文章标题</label>
+                    <input type="text" id="editTitle" placeholder="输入一个吸引人的标题..." maxlength="80">
+                </div>
+                <div class="editor-field">
+                    <label>摘要（显示在卡片上）</label>
+                    <input type="text" id="editExcerpt" placeholder="简短描述文章内容..." maxlength="150">
+                </div>
+                <div class="editor-field editor-field-row">
+                    <div class="editor-half">
+                        <label>分类标签</label>
+                        <select id="editTag">
+                            <option value="前端">前端</option>
+                            <option value="后端">后端</option>
+                            <option value="算法">算法</option>
+                            <option value="工具">工具</option>
+                            <option value="随笔">随笔</option>
+                        </select>
+                    </div>
+                    <div class="editor-half">
+                        <label>封面图标</label>
+                        <select id="editEmoji">
+                            <option value="🚀">🚀 技术</option>
+                            <option value="⚡">⚡ 效率</option>
+                            <option value="💻">💻 编程</option>
+                            <option value="🔧">🔧 工具</option>
+                            <option value="📊">📊 数据</option>
+                            <option value="✍️">✍️ 写作</option>
+                            <option value="🐍">🐍 Python</option>
+                            <option value="⚙️">⚙️ C++</option>
+                            <option value="⚛️">⚛️ 前端</option>
+                            <option value="🏆">🏆 竞赛</option>
+                            <option value="🌳">🌳 结构</option>
+                            <option value="🎨">🎨 设计</option>
+                            <option value="🏗️">🏗️ 架构</option>
+                            <option value="🔀">🔀 Git</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="editor-field">
+                    <label>文章内容（支持 HTML）</label>
+                    <div class="editor-toolbar" id="editorToolbar">
+                        <button type="button" data-tag="h2" title="大标题">H2</button>
+                        <button type="button" data-tag="h3" title="小标题">H3</button>
+                        <button type="button" data-tag="p" title="段落">P</button>
+                        <button type="button" data-tag="strong" title="加粗">B</button>
+                        <button type="button" data-tag="code" title="行内代码">&lt;/&gt;</button>
+                        <button type="button" data-tag="pre" title="代码块">PRE</button>
+                        <button type="button" data-tag="ul" title="无序列表">UL</button>
+                        <button type="button" data-tag="ol" title="有序列表">OL</button>
+                    </div>
+                    <textarea id="editBody" placeholder="在这里书写你的文章内容...&#10;&#10;提示：使用顶部工具栏快速插入 HTML 标签" rows="16"></textarea>
+                </div>
+            </div>
+            <div class="editor-footer">
+                <p class="editor-hint" id="editorHint"></p>
+                <button class="btn btn-primary" id="btnPublish"><i class="fas fa-paper-plane"></i> 发布文章</button>
+            </div>
         </div>
     </div>
 
