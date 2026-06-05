@@ -7,11 +7,11 @@
 const SUPABASE_URL = 'https://evvmlhqfwjonkznjaibz.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV2dm1saHFmd2pvbmt6bmphaWJ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NTE3ODksImV4cCI6MjA5NjIyNzc4OX0.c-W6ckwKpL_TO93k_6mcVsZNGFX7gok3uEI5rwLLm8w';
 
-let supabase = null;
+let dbClient = null;
 let dbReady = false;
 
 try {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     dbReady = true;
     console.log('☁️ Supabase 云数据库已连接');
 } catch (e) {
@@ -20,12 +20,12 @@ try {
 
 // ===== 通用存储层（云端优先，本地兜底） =====
 async function dbFetch(table, query = 'select', body = null) {
-    if (!dbReady || !supabase) return null;
+    if (!dbReady || !dbClient) return null;
     try {
         let req;
-        if (query === 'select') req = supabase.from(table).select('*');
-        else if (query === 'insert') req = supabase.from(table).insert(body).select();
-        else if (query === 'delete') req = supabase.from(table).delete().eq('id', body);
+        if (query === 'select') req = dbClient.from(table).select('*');
+        else if (query === 'insert') req = dbClient.from(table).insert(body).select();
+        else if (query === 'delete') req = dbClient.from(table).delete().eq('id', body);
         
         const { data, error } = await req;
         if (error) throw error;
@@ -100,12 +100,12 @@ async function syncToCloud(table, data) {
         const existing = await dbFetch(table, 'select');
         if (existing) {
             for (const row of existing) {
-                await supabase.from(table).delete().eq('id', row.id);
+                await dbClient.from(table).delete().eq('id', row.id);
             }
         }
         // 再全量写入
         for (const row of data) {
-            await supabase.from(table).insert(row);
+            await dbClient.from(table).insert(row);
         }
     } catch (e) { /* 静默失败 */ }
 }
@@ -113,7 +113,7 @@ async function syncToCloud(table, data) {
 async function syncFromCloud(table) {
     if (!dbReady) return null;
     try {
-        const { data, error } = await supabase.from(table).select('*');
+        const { data, error } = await dbClient.from(table).select('*');
         if (error) throw error;
         return data;
     } catch (e) { return null; }
