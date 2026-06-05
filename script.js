@@ -43,6 +43,80 @@ function initDefaultAdmin() {
     }
 }
 
+// ===== 访客记录 =====
+function getTimeStr() {
+    const now = new Date();
+    return now.getFullYear() + '-' +
+        String(now.getMonth() + 1).padStart(2, '0') + '-' +
+        String(now.getDate()).padStart(2, '0') + ' ' +
+        String(now.getHours()).padStart(2, '0') + ':' +
+        String(now.getMinutes()).padStart(2, '0') + ':' +
+        String(now.getSeconds()).padStart(2, '0');
+}
+
+function loadVisits() {
+    try {
+        const data = localStorage.getItem('blog_visits');
+        return data ? JSON.parse(data) : [];
+    } catch (e) { return []; }
+}
+
+function saveVisits(visits) {
+    localStorage.setItem('blog_visits', JSON.stringify(visits));
+}
+
+function recordVisit(user) {
+    const visits = loadVisits();
+    const existing = visits.find(v => v.username === user.username);
+    if (existing) {
+        existing.count = (existing.count || 1) + 1;
+        existing.lastLogin = getTimeStr();
+    } else {
+        visits.push({
+            username: user.username,
+            userId: user.id,
+            firstLogin: getTimeStr(),
+            lastLogin: getTimeStr(),
+            count: 1
+        });
+    }
+    saveVisits(visits);
+    renderVisitorsPanel();
+}
+
+function renderVisitorsPanel() {
+    const panel = document.getElementById('visitorsPanel');
+    const tbody = document.getElementById('visitorsTableBody');
+    if (!panel || !tbody) return;
+
+    if (!isAdmin()) {
+        panel.style.display = 'none';
+        return;
+    }
+    panel.style.display = 'block';
+
+    const visits = loadVisits();
+    if (visits.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="visitors-empty">还没有访客记录</td></tr>';
+        return;
+    }
+
+    const sorted = [...visits].sort((a, b) => b.lastLogin.localeCompare(a.lastLogin));
+
+    tbody.innerHTML = sorted.map(v => `
+        <tr>
+            <td>
+                <div class="visitor-name">
+                    <span class="visitor-avatar-sm">${escapeHtml(v.username).charAt(0).toUpperCase()}</span>
+                    ${escapeHtml(v.username)}
+                </div>
+            </td>
+            <td>${v.lastLogin}</td>
+            <td><span class="visit-count">${v.count}</span></td>
+        </tr>
+    `).join('');
+}
+
 function getCurrentUser() {
     try {
         const data = localStorage.getItem('blog_current_user');
@@ -568,6 +642,7 @@ function updateAuthUI() {
     }
     updateCommentFormUI();
     updateGuestbookFormUI();
+    renderVisitorsPanel();
 }
 
 function updateCommentFormUI() {
@@ -730,6 +805,7 @@ function handleLogin() {
 
     if (user) {
         setCurrentUser(user);
+        recordVisit(user);
         loginHint.textContent = '✅ 登录成功！';
         loginHint.className = 'auth-hint success';
         setTimeout(() => {
@@ -776,6 +852,7 @@ function handleRegister() {
 
     setTimeout(() => {
         setCurrentUser(newUser);
+        recordVisit(newUser);
         closeAuthModal();
         updateAuthUI();
         updateCommentFormUI();
@@ -968,6 +1045,7 @@ function init() {
     updateAuthUI();
     filterPosts();
     renderGuestbook();
+    renderVisitorsPanel();
     animateStats();
 
     console.log('🔐 默认管理员: M1kasa / admin123');

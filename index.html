@@ -114,6 +114,30 @@
         </div>
     </section>
 
+    <!-- 访客记录面板（仅管理员可见） -->
+    <section id="visitorsPanel" class="section visitors-panel-section" style="display:none;">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">👥 访客记录</h2>
+                <p class="section-subtitle">最近访问博客的用户</p>
+            </div>
+            <div class="visitors-table-wrapper">
+                <table class="visitors-table">
+                    <thead>
+                        <tr>
+                            <th>👤 用户名</th>
+                            <th>🕐 登录时间</th>
+                            <th>🔢 访问次数</th>
+                        </tr>
+                    </thead>
+                    <tbody id="visitorsTableBody">
+                        <!-- JS 动态渲染 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
     <!-- 关于区 -->
     <section id="about" class="section about-section">
         <div class="container">
