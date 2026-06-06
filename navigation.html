@@ -132,6 +132,92 @@
         .tool-btn.import-btn:hover {
             border-color: #ff922b;
         }
+        .tool-btn.bg-btn:hover {
+            border-color: #f06595;
+        }
+
+        /* ── 背景预设 ── */
+        .bg-presets {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 16px 0;
+            justify-content: center;
+        }
+        .bg-preset {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.2s;
+            position: relative;
+        }
+        .bg-preset:hover {
+            transform: scale(1.1);
+        }
+        .bg-preset.active {
+            border-color: #fff;
+            box-shadow: 0 0 0 2px var(--accent);
+        }
+        .bg-preset.active::after {
+            content: '✓';
+            position: absolute;
+            bottom: -2px;
+            right: -2px;
+            background: var(--accent);
+            color: #fff;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            font-size: 0.65rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .bg-field-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .bg-field-row input[type="color"] {
+            width: 40px;
+            height: 40px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            padding: 0;
+            background: transparent;
+        }
+        .bg-field-row input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        .bg-field-row input[type="color"]::-webkit-color-swatch {
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+        .bg-field-row input[type="text"] {
+            flex: 1;
+            padding: 10px 12px;
+            background: #12121f;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 0.85rem;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        .bg-field-row input[type="text"]:focus {
+            border-color: var(--accent);
+        }
+        .bg-section-label {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin: 14px 0 8px;
+            letter-spacing: 0.5px;
+            text-align: left;
+        }
 
         /* ── 链接网格 ── */
         .container {
@@ -528,6 +614,7 @@
         <div class="toolbar">
             <button class="tool-btn export-btn" id="btnExport" title="导出收藏为文件">📥 导出</button>
             <button class="tool-btn import-btn" id="btnImport" title="从文件导入收藏">📤 导入</button>
+            <button class="tool-btn bg-btn" id="btnBg" title="自定义背景">🎨 背景</button>
         </div>
     </div>
 
@@ -567,6 +654,31 @@
     <!-- ══════════ Toast ══════════ -->
     <div class="toast" id="toast"></div>
 
+    <!-- ══════════ 背景设置弹窗 ══════════ -->
+    <div class="modal-overlay" id="bgOverlay">
+        <div class="modal">
+            <h3>🎨 自定义背景</h3>
+            <p class="bg-section-label">📐 预设主题</p>
+            <div class="bg-presets" id="bgPresets">
+                <!-- JS 动态渲染 -->
+            </div>
+            <p class="bg-section-label">🎨 自定义纯色</p>
+            <div class="bg-field-row">
+                <input type="color" id="bgColorPicker" value="#0f0f1a">
+                <input type="text" id="bgColorText" placeholder="#0f0f1a" maxlength="7">
+            </div>
+            <p class="bg-section-label">🖼 图片背景（输入图片 URL）</p>
+            <div class="bg-field-row">
+                <input type="text" id="bgImageUrl" placeholder="https://example.com/bg.jpg">
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-cancel" id="btnBgCancel">取消</button>
+                <button class="btn btn-primary" id="btnBgApply">✅ 应用</button>
+            </div>
+            <button class="btn btn-danger" id="btnBgReset" style="width:100%;margin-top:10px;">🔄 恢复默认背景</button>
+        </div>
+    </div>
+
     <!-- ══════════ 密码锁 ══════════ -->
     <div class="lock-overlay" id="lockOverlay">
         <div class="lock-box">
@@ -580,6 +692,181 @@
     </div>
 
     <script>
+        // ──────────────── 背景自定义 ────────────────
+        (function() {
+            const BG_KEY = 'nav_bg_config';
+            const DEFAULT_BG = {
+                type: 'default',
+                value: ''
+            };
+
+            // 预设背景
+            const PRESETS = [
+                { name: '默认星空', type: 'default', value: '', css: '' },
+                { name: '深邃蓝', type: 'solid', value: '#0a0a1a', css: '#0a0a1a' },
+                { name: '暗夜紫', type: 'solid', value: '#0f0a1a', css: '#0f0a1a' },
+                { name: '墨绿', type: 'solid', value: '#0a1a14', css: '#0a1a14' },
+                { name: '深棕', type: 'solid', value: '#1a1410', css: '#1a1410' },
+                { name: '暗红', type: 'solid', value: '#1a0f0f', css: '#1a0f0f' },
+                { name: '渐变紫蓝', type: 'gradient', value: 'linear-gradient(135deg, #1a0a2e, #0a1628)', css: 'linear-gradient(135deg, #1a0a2e, #0a1628)' },
+                { name: '渐变日落', type: 'gradient', value: 'linear-gradient(135deg, #2d1b00, #1a0a2e)', css: 'linear-gradient(135deg, #2d1b00, #1a0a2e)' },
+                { name: '渐变海洋', type: 'gradient', value: 'linear-gradient(135deg, #0a1628, #0a2e2e)', css: 'linear-gradient(135deg, #0a1628, #0a2e2e)' },
+            ];
+
+            const bgOverlay = document.getElementById('bgOverlay');
+            const bgPresetsDiv = document.getElementById('bgPresets');
+            const bgColorPicker = document.getElementById('bgColorPicker');
+            const bgColorText = document.getElementById('bgColorText');
+            const bgImageUrl = document.getElementById('bgImageUrl');
+
+            let currentConfig = loadBgConfig();
+            let tempConfig = { ...currentConfig };
+
+            function loadBgConfig() {
+                try {
+                    const raw = localStorage.getItem(BG_KEY);
+                    return raw ? JSON.parse(raw) : { ...DEFAULT_BG };
+                } catch { return { ...DEFAULT_BG }; }
+            }
+
+            function saveBgConfig(config) {
+                localStorage.setItem(BG_KEY, JSON.stringify(config));
+            }
+
+            function applyBackground(config) {
+                const body = document.body;
+                // 清除之前的背景
+                body.style.background = '';
+                body.style.backgroundImage = '';
+                body.style.backgroundColor = '';
+
+                if (config.type === 'default') {
+                    body.style.background = 'var(--bg)';
+                    body.style.backgroundImage = 'radial-gradient(ellipse at 20% 20%, rgba(108, 99, 255, 0.08) 0%, transparent 60%), radial-gradient(ellipse at 80% 80%, rgba(0, 200, 200, 0.06) 0%, transparent 60%), radial-gradient(ellipse at 50% 50%, rgba(108, 99, 255, 0.03) 0%, transparent 80%)';
+                } else if (config.type === 'solid') {
+                    body.style.background = config.value;
+                    body.style.backgroundImage = 'none';
+                } else if (config.type === 'gradient') {
+                    body.style.background = config.value;
+                    body.style.backgroundImage = 'none';
+                } else if (config.type === 'image') {
+                    body.style.background = 'var(--bg)';
+                    body.style.backgroundImage = `url(${config.value})`;
+                    body.style.backgroundSize = 'cover';
+                    body.style.backgroundPosition = 'center';
+                    body.style.backgroundAttachment = 'fixed';
+                }
+            }
+
+            // 渲染预设色块
+            function renderPresets(activeConfig) {
+                bgPresetsDiv.innerHTML = PRESETS.map((p, i) => {
+                    let bgStyle = '';
+                    if (p.type === 'default') {
+                        bgStyle = 'background: #0f0f1a; background-image: radial-gradient(ellipse at 30% 30%, rgba(108,99,255,0.5) 0%, transparent 70%);';
+                    } else if (p.type === 'solid') {
+                        bgStyle = `background: ${p.css};`;
+                    } else if (p.type === 'gradient') {
+                        bgStyle = `background: ${p.css};`;
+                    }
+                    const isActive = (activeConfig.type === p.type && activeConfig.value === p.value);
+                    return `<div class="bg-preset${isActive ? ' active' : ''}" style="${bgStyle}" title="${p.name}" data-index="${i}"></div>`;
+                }).join('');
+            }
+
+            function openBgModal() {
+                tempConfig = { ...currentConfig };
+                renderPresets(tempConfig);
+                bgColorPicker.value = tempConfig.type === 'solid' ? tempConfig.value : '#0f0f1a';
+                bgColorText.value = tempConfig.type === 'solid' ? tempConfig.value : '';
+                bgImageUrl.value = tempConfig.type === 'image' ? tempConfig.value : '';
+                bgOverlay.classList.add('active');
+            }
+
+            function closeBgModal() {
+                bgOverlay.classList.remove('active');
+            }
+
+            // 预设点击
+            bgPresetsDiv.addEventListener('click', (e) => {
+                const preset = e.target.closest('.bg-preset');
+                if (!preset) return;
+                const index = parseInt(preset.dataset.index);
+                const p = PRESETS[index];
+                tempConfig = { type: p.type, value: p.value };
+                renderPresets(tempConfig);
+                if (p.type === 'solid') {
+                    bgColorPicker.value = p.value;
+                    bgColorText.value = p.value;
+                }
+                bgImageUrl.value = '';
+            });
+
+            // 颜色选择器同步
+            bgColorPicker.addEventListener('input', () => {
+                bgColorText.value = bgColorPicker.value;
+                tempConfig = { type: 'solid', value: bgColorPicker.value };
+                renderPresets(tempConfig);
+                bgImageUrl.value = '';
+            });
+
+            bgColorText.addEventListener('input', () => {
+                let val = bgColorText.value.trim();
+                if (/^#[0-9a-fA-F]{6}$/.test(val)) {
+                    bgColorPicker.value = val;
+                    tempConfig = { type: 'solid', value: val };
+                    renderPresets(tempConfig);
+                    bgImageUrl.value = '';
+                }
+            });
+
+            // 图片 URL
+            bgImageUrl.addEventListener('input', () => {
+                const val = bgImageUrl.value.trim();
+                if (val) {
+                    tempConfig = { type: 'image', value: val };
+                    renderPresets({ type: 'image', value: val });
+                }
+            });
+
+            // 应用
+            document.getElementById('btnBgApply').addEventListener('click', () => {
+                currentConfig = { ...tempConfig };
+                saveBgConfig(currentConfig);
+                applyBackground(currentConfig);
+                closeBgModal();
+                showToast('✅ 背景已更新');
+            });
+
+            // 取消
+            document.getElementById('btnBgCancel').addEventListener('click', closeBgModal);
+
+            // 重置
+            document.getElementById('btnBgReset').addEventListener('click', () => {
+                tempConfig = { ...DEFAULT_BG };
+                currentConfig = { ...DEFAULT_BG };
+                saveBgConfig(currentConfig);
+                applyBackground(currentConfig);
+                renderPresets(tempConfig);
+                bgColorPicker.value = '#0f0f1a';
+                bgColorText.value = '';
+                bgImageUrl.value = '';
+                closeBgModal();
+                showToast('🔄 已恢复默认背景');
+            });
+
+            // 弹窗外点击关闭
+            bgOverlay.addEventListener('click', (e) => {
+                if (e.target === bgOverlay) closeBgModal();
+            });
+
+            // 启动
+            applyBackground(currentConfig);
+
+            // 暴露打开函数
+            window._openBgModal = openBgModal;
+        })();
+
         // ──────────────── 密码锁 ────────────────
         (function() {
             const LOCK_HASH_KEY = 'nav_lock_hash';
@@ -926,7 +1213,13 @@
         });
 
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') closeModal();
+            if (e.key === 'Escape') {
+                if (document.getElementById('bgOverlay').classList.contains('active')) {
+                    document.getElementById('bgOverlay').classList.remove('active');
+                    return;
+                }
+                closeModal();
+            }
             if (e.key === 'Enter' && overlay.classList.contains('active')) saveSite();
         });
 
@@ -946,6 +1239,11 @@
                 }
             };
             input.click();
+        });
+
+        // 背景设置
+        document.getElementById('btnBg').addEventListener('click', () => {
+            window._openBgModal();
         });
 
         // ──────────────── 启动 ────────────────
