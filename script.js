@@ -102,6 +102,24 @@ function getTimeStr() {
         String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0') + ':' + String(now.getSeconds()).padStart(2,'0');
 }
 
+// 计算相对时间（如：3小时前、2天前）
+function timeAgo(dateStr) {
+    if (!dateStr) return '';
+    const past = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - past;
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHr = Math.floor(diffMs / 3600000);
+    const diffDay = Math.floor(diffMs / 86400000);
+
+    if (diffMin < 1) return '刚刚';
+    if (diffMin < 60) return diffMin + ' 分钟前';
+    if (diffHr < 24) return diffHr + ' 小时前';
+    if (diffDay < 30) return diffDay + ' 天前';
+    if (diffDay < 365) return Math.floor(diffDay / 30) + ' 个月前';
+    return Math.floor(diffDay / 365) + ' 年前';
+}
+
 function loadVisits() { return cacheGet('blog_visits'); }
 function saveVisits(visits) { saveAndSync('blog_visits', 'visits', visits); }
 
@@ -424,8 +442,8 @@ function renderPosts(posts) {
                 <h3 class="card-title">${post.title}</h3>
                 <p class="card-excerpt">${post.excerpt}</p>
                 <div class="card-footer">
+                    <span><i class="far fa-clock"></i> ${timeAgo(post.date)}</span>
                     <span><i class="far fa-calendar"></i> ${post.date}</span>
-                    <span><i class="far fa-clock"></i> ${post.readTime}</span>
                     <span><i class="far fa-comment"></i> ${comments.length}</span>
                 </div>
             </div>
@@ -514,8 +532,8 @@ function openPost(post) {
     postDetail.innerHTML = `
         <h1>${post.title}</h1>
         <div class="post-meta">
+            <span><i class="far fa-clock"></i> ${timeAgo(post.date)}</span>
             <span><i class="far fa-calendar"></i> ${post.date}</span>
-            <span><i class="far fa-clock"></i> ${post.readTime}</span>
             <span>${post.tags.map(t => `<span style="color:var(--accent);">#${t}</span>`).join(' ')}</span>
         </div>
         <div class="post-body">${post.body}</div>`;
