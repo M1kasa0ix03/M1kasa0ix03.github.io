@@ -3,7 +3,6 @@
 *.c
 *.exe
 *.bat
-navigation.html
 super_mario.html
 *.md
 blog/
