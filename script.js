@@ -666,16 +666,16 @@ async function submitComment() {
     if (!body) { commentHint.textContent = '请输入评论内容'; return; }
     if (!currentPostId) return;
 
-    const now = new Date();
-    const timeStr = now.getFullYear() + '-' +
-        String(now.getMonth() + 1).padStart(2, '0') + '-' +
-        String(now.getDate()).padStart(2, '0') + ' ' +
-        String(now.getHours()).padStart(2, '0') + ':' +
-        String(now.getMinutes()).padStart(2, '0');
+    const newComment = {
+        id: genSafeId(),
+        post_id: currentPostId,
+        username: user.username,
+        user_id: user.id,
+        body: body,
+        time: new Date().toISOString().replace('T', ' ').slice(0, 16)
+    };
 
-    const newComment = { id: genSafeId(), username: user.username, user_id: user.id, post_id: currentPostId, body, time: timeStr };
-
-    // 先添加到本地缓存，立即显示
+    // 先显示本地
     const key = 'blog_comments_' + currentPostId;
     const local = cacheGet(key);
     local.push(newComment);
@@ -684,23 +684,20 @@ async function submitComment() {
     commentBody.value = '';
     commentHint.textContent = '✅ 评论发表成功！';
     setTimeout(() => { commentHint.textContent = ''; }, 2000);
-
-    // 刷新文章卡片上的评论数
     filterPosts();
 
-    // 上传到云端，然后从云端拉取最新数据（包含其他用户的评论）
+    // 上传云端
     if (dbReady && dbClient) {
-        try {
-            await dbClient.from('comments').upsert(newComment);
-            const { data: cloud } = await dbClient.from('comments').select('*').eq('post_id', currentPostId);
-            if (cloud && cloud.length > 0) {
-                cacheSet(key, cloud);
-                renderComments(currentPostId);
-                filterPosts();
+        dbClient.from('comments').insert(newComment).then(({ error }) => {
+            if (error) {
+                console.warn('☁️ 评论上传失败:', error.message, error.details);
+            } else {
+                // 从云端刷新
+                dbClient.from('comments').select('*').eq('post_id', currentPostId).then(({ data }) => {
+                    if (data) { cacheSet(key, data); renderComments(currentPostId); filterPosts(); }
+                }).catch(() => {});
             }
-        } catch (e) {
-            console.warn('☁️ 评论同步失败:', e.message);
-        }
+        }).catch(() => {});
     }
 }
 
@@ -1443,8 +1440,7 @@ function init() {
     renderVisitorsPanel();
     animateStats();
 
-    // 从云端拉取数据（异步，后台静默进行）
-    pullFromCloud();
+    // 云数据库连接由 IIFE 自动管理（含重试），成功后会调用 pullFromCloud()
 
     console.log('☁️ 数据同步: 本地 + Supabase 云端');
     console.log('🔐 默认管理员: M1kasa / admin123');
