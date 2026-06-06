@@ -11,22 +11,53 @@ let dbClient = null;
 let dbReady = false;
 let _supabaseRetries = 0;
 
+// 离线状态横幅
+function showOfflineBanner(msg) {
+    let bar = document.getElementById('offlineBar');
+    if (!bar) {
+        bar = document.createElement('div');
+        bar.id = 'offlineBar';
+        bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;padding:10px 16px;text-align:center;font-size:14px;font-weight:600;background:#fbbf24;color:#1a1a2e;transition:transform 0.3s;transform:translateY(-100%);';
+        document.body.prepend(bar);
+    }
+    bar.textContent = msg;
+    bar.style.transform = 'translateY(0)';
+    // 导航栏往下移，不被横幅遮挡
+    const nb = document.getElementById('navbar');
+    if (nb) nb.style.top = '40px';
+}
+function hideOfflineBanner() {
+    const bar = document.getElementById('offlineBar');
+    if (bar) {
+        bar.style.background = '#10b981';
+        bar.style.color = '#fff';
+        bar.textContent = '✅ 云数据库已连接';
+        const nb = document.getElementById('navbar');
+        if (nb) nb.style.top = '0';
+        setTimeout(() => { if (bar) bar.style.transform = 'translateY(-100%)'; }, 1500);
+    }
+}
+
+// 启动时显示离线横幅
+showOfflineBanner('🔄 正在连接云数据库...');
+
 (function connectSupabase() {
     if (typeof window.supabase !== 'undefined') {
         try {
             dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
             dbReady = true;
             console.log('☁️ Supabase 云数据库已连接');
+            hideOfflineBanner();
             pullFromCloud();
         } catch (e) {
-            console.warn('⚠️ Supabase 连接失败，使用本地存储');
+            showOfflineBanner('⚠️ 云数据库连接失败，仅使用本地存储');
         }
     } else if (_supabaseRetries < 20) {
-        // unpkg 加载中，每 500ms 重试，最多等 10 秒
         _supabaseRetries++;
+        if (_supabaseRetries === 10) showOfflineBanner('⏳ 加载较慢，请耐心等待...');
         setTimeout(connectSupabase, 500);
     } else {
-        console.warn('⚠️ Supabase SDK 加载超时，使用本地存储');
+        showOfflineBanner('❌ 云数据库加载超时，仅使用本地存储（刷新页面重试）');
     }
 })();
 
