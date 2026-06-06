@@ -211,6 +211,39 @@
         .bg-field-row input[type="text"]:focus {
             border-color: var(--accent);
         }
+        .bg-upload-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+            flex-wrap: nowrap;
+        }
+        .bg-upload-btn {
+            flex-shrink: 0;
+            padding: 10px 18px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--card-bg);
+            color: var(--text-secondary);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .bg-upload-btn:hover {
+            border-color: var(--accent);
+            color: var(--text);
+            background: var(--card-hover);
+        }
+        .bg-upload-name {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            max-width: 180px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex-shrink: 1;
+        }
         .bg-section-label {
             font-size: 0.78rem;
             color: var(--text-secondary);
@@ -672,10 +705,10 @@
                 <input type="text" id="bgImageUrl" placeholder="https://example.com/bg.jpg">
             </div>
             <p class="bg-section-label">📁 本地上传图片</p>
-            <div class="bg-field-row" style="justify-content: center;">
+            <div class="bg-upload-row">
                 <input type="file" id="bgImageFile" accept="image/*" style="display:none;">
-                <button class="btn btn-cancel" id="btnBgUpload" style="flex:0;padding:10px 20px;">📁 选择本地图片</button>
-                <span id="bgFileName" style="font-size:0.75rem;color:var(--text-secondary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+                <button class="bg-upload-btn" id="btnBgUpload">📁 选择本地图片</button>
+                <span class="bg-upload-name" id="bgFileName"></span>
             </div>
             <div class="btn-row">
                 <button class="btn btn-cancel" id="btnBgCancel">取消</button>
