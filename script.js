@@ -9,7 +9,6 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 let dbClient = null;
 let dbReady = false;
-let _supabaseRetries = 0;
 
 // 离线状态横幅
 function showOfflineBanner(msg) {
@@ -22,7 +21,6 @@ function showOfflineBanner(msg) {
     }
     bar.textContent = msg;
     bar.style.transform = 'translateY(0)';
-    // 导航栏往下移，不被横幅遮挡
     const nb = document.getElementById('navbar');
     if (nb) nb.style.top = '40px';
 }
@@ -38,27 +36,32 @@ function hideOfflineBanner() {
     }
 }
 
-// 启动时显示离线横幅
 showOfflineBanner('🔄 正在连接云数据库...');
 
-(function connectSupabase() {
-    if (typeof window.supabase !== 'undefined') {
-        try {
-            dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            dbReady = true;
-            console.log('☁️ Supabase 云数据库已连接');
-            hideOfflineBanner();
-            pullFromCloud();
-        } catch (e) {
-            showOfflineBanner('⚠️ 云数据库连接失败，仅使用本地存储');
-        }
-    } else if (_supabaseRetries < 20) {
-        _supabaseRetries++;
-        if (_supabaseRetries === 10) showOfflineBanner('⏳ 加载较慢，请耐心等待...');
-        setTimeout(connectSupabase, 500);
-    } else {
-        showOfflineBanner('❌ 云数据库加载超时，仅使用本地存储（刷新页面重试）');
+// 双 CDN 竞速加载 supabase-js
+(function () {
+    let done = false;
+    function onSDKReady() {
+        if (done) return; done = true;
+        if (typeof window.supabase !== 'undefined') {
+            try {
+                dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+                dbReady = true;
+                console.log('☁️ Supabase 已连接');
+                hideOfflineBanner();
+                pullFromCloud();
+            } catch (e) { showOfflineBanner('⚠️ 连接失败'); }
+        } else { showOfflineBanner('❌ 加载失败，刷新重试'); }
     }
+    ['https://unpkg.com/@supabase/supabase-js@2',
+     'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2'].forEach(url => {
+        const s = document.createElement('script');
+        s.src = url;
+        s.onload = onSDKReady;
+        s.onerror = function () { this.remove(); };
+        document.head.appendChild(s);
+    });
+    setTimeout(onSDKReady, 10000);
 })();
 
 // ===== 通用存储层 =====
@@ -690,7 +693,7 @@ async function submitComment() {
     if (dbReady && dbClient) {
         dbClient.from('comments').insert(newComment).then(({ error }) => {
             if (error) {
-                console.warn('☁️ 评论上传失败:', error.message, error.details);
+                console.warn('☁️ 评论上传失败:', error.message, '详情:', error.details, 'code:', error.code, 'payload:', JSON.stringify(newComment));
             } else {
                 // 从云端刷新
                 dbClient.from('comments').select('*').eq('post_id', currentPostId).then(({ data }) => {
