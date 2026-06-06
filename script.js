@@ -9,14 +9,26 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 let dbClient = null;
 let dbReady = false;
+let _supabaseRetries = 0;
 
-try {
-    dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    dbReady = true;
-    console.log('☁️ Supabase 云数据库已连接');
-} catch (e) {
-    console.warn('⚠️ Supabase 连接失败，使用本地存储');
-}
+(function connectSupabase() {
+    if (typeof window.supabase !== 'undefined') {
+        try {
+            dbClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+            dbReady = true;
+            console.log('☁️ Supabase 云数据库已连接');
+            pullFromCloud();
+        } catch (e) {
+            console.warn('⚠️ Supabase 连接失败，使用本地存储');
+        }
+    } else if (_supabaseRetries < 20) {
+        // unpkg 加载中，每 500ms 重试，最多等 10 秒
+        _supabaseRetries++;
+        setTimeout(connectSupabase, 500);
+    } else {
+        console.warn('⚠️ Supabase SDK 加载超时，使用本地存储');
+    }
+})();
 
 // ===== 通用存储层 =====
 // 云端操作：增删改查
