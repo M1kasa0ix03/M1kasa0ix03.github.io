@@ -671,6 +671,12 @@
             <div class="bg-field-row">
                 <input type="text" id="bgImageUrl" placeholder="https://example.com/bg.jpg">
             </div>
+            <p class="bg-section-label">📁 本地上传图片</p>
+            <div class="bg-field-row" style="justify-content: center;">
+                <input type="file" id="bgImageFile" accept="image/*" style="display:none;">
+                <button class="btn btn-cancel" id="btnBgUpload" style="flex:0;padding:10px 20px;">📁 选择本地图片</button>
+                <span id="bgFileName" style="font-size:0.75rem;color:var(--text-secondary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+            </div>
             <div class="btn-row">
                 <button class="btn btn-cancel" id="btnBgCancel">取消</button>
                 <button class="btn btn-primary" id="btnBgApply">✅ 应用</button>
@@ -718,9 +724,12 @@
             const bgColorPicker = document.getElementById('bgColorPicker');
             const bgColorText = document.getElementById('bgColorText');
             const bgImageUrl = document.getElementById('bgImageUrl');
+            const bgImageFile = document.getElementById('bgImageFile');
+            const bgFileName = document.getElementById('bgFileName');
 
             let currentConfig = loadBgConfig();
             let tempConfig = { ...currentConfig };
+            let localImageData = null;  // 暂存本地图片 base64
 
             function loadBgConfig() {
                 try {
@@ -776,10 +785,19 @@
 
             function openBgModal() {
                 tempConfig = { ...currentConfig };
+                // 恢复本地图片数据
+                if (currentConfig.type === 'image' && currentConfig.value && currentConfig.value.startsWith('data:')) {
+                    localImageData = currentConfig.value;
+                    bgFileName.textContent = '已上传图片';
+                } else {
+                    localImageData = null;
+                    bgFileName.textContent = '';
+                }
                 renderPresets(tempConfig);
                 bgColorPicker.value = tempConfig.type === 'solid' ? tempConfig.value : '#0f0f1a';
                 bgColorText.value = tempConfig.type === 'solid' ? tempConfig.value : '';
-                bgImageUrl.value = tempConfig.type === 'image' ? tempConfig.value : '';
+                bgImageUrl.value = (tempConfig.type === 'image' && tempConfig.value && !tempConfig.value.startsWith('data:')) ? tempConfig.value : '';
+                bgImageFile.value = '';
                 bgOverlay.classList.add('active');
             }
 
@@ -794,6 +812,9 @@
                 const index = parseInt(preset.dataset.index);
                 const p = PRESETS[index];
                 tempConfig = { type: p.type, value: p.value };
+                localImageData = null;
+                bgImageFile.value = '';
+                bgFileName.textContent = '';
                 renderPresets(tempConfig);
                 if (p.type === 'solid') {
                     bgColorPicker.value = p.value;
@@ -806,6 +827,9 @@
             bgColorPicker.addEventListener('input', () => {
                 bgColorText.value = bgColorPicker.value;
                 tempConfig = { type: 'solid', value: bgColorPicker.value };
+                localImageData = null;
+                bgImageFile.value = '';
+                bgFileName.textContent = '';
                 renderPresets(tempConfig);
                 bgImageUrl.value = '';
             });
@@ -815,6 +839,9 @@
                 if (/^#[0-9a-fA-F]{6}$/.test(val)) {
                     bgColorPicker.value = val;
                     tempConfig = { type: 'solid', value: val };
+                    localImageData = null;
+                    bgImageFile.value = '';
+                    bgFileName.textContent = '';
                     renderPresets(tempConfig);
                     bgImageUrl.value = '';
                 }
@@ -824,9 +851,30 @@
             bgImageUrl.addEventListener('input', () => {
                 const val = bgImageUrl.value.trim();
                 if (val) {
+                    localImageData = null;
+                    bgFileName.textContent = '';
                     tempConfig = { type: 'image', value: val };
                     renderPresets({ type: 'image', value: val });
                 }
+            });
+
+            // 本地上传图片
+            document.getElementById('btnBgUpload').addEventListener('click', () => {
+                bgImageFile.click();
+            });
+
+            bgImageFile.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                bgFileName.textContent = file.name;
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    localImageData = ev.target.result;
+                    bgImageUrl.value = '';
+                    tempConfig = { type: 'image', value: localImageData };
+                    renderPresets({ type: 'image', value: localImageData });
+                };
+                reader.readAsDataURL(file);
             });
 
             // 应用
@@ -845,12 +893,15 @@
             document.getElementById('btnBgReset').addEventListener('click', () => {
                 tempConfig = { ...DEFAULT_BG };
                 currentConfig = { ...DEFAULT_BG };
+                localImageData = null;
                 saveBgConfig(currentConfig);
                 applyBackground(currentConfig);
                 renderPresets(tempConfig);
                 bgColorPicker.value = '#0f0f1a';
                 bgColorText.value = '';
                 bgImageUrl.value = '';
+                bgImageFile.value = '';
+                bgFileName.textContent = '';
                 closeBgModal();
                 showToast('🔄 已恢复默认背景');
             });
