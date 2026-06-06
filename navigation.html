@@ -100,6 +100,39 @@
             color: #555;
         }
 
+        /* ── 工具栏 ── */
+        .toolbar {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 14px;
+        }
+        .tool-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--card-bg);
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 0.3px;
+        }
+        .tool-btn:hover {
+            border-color: var(--accent);
+            color: var(--text);
+            background: var(--card-hover);
+        }
+        .tool-btn.export-btn:hover {
+            border-color: #20c997;
+        }
+        .tool-btn.import-btn:hover {
+            border-color: #ff922b;
+        }
+
         /* ── 链接网格 ── */
         .container {
             width: 100%;
@@ -492,6 +525,10 @@
             </svg>
             <input type="text" id="searchInput" placeholder="搜索已保存的网站...">
         </div>
+        <div class="toolbar">
+            <button class="tool-btn export-btn" id="btnExport" title="导出收藏为文件">📥 导出</button>
+            <button class="tool-btn import-btn" id="btnImport" title="从文件导入收藏">📤 导入</button>
+        </div>
     </div>
 
     <!-- ══════════ 链接网格 ══════════ -->
@@ -627,6 +664,55 @@
 
         function saveSites(sites) {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(sites));
+        }
+
+        // 导出收藏为 JSON 文件
+        function exportSites() {
+            const sites = allSites;
+            if (sites.length === 0) {
+                showToast('⚠️ 没有可导出的收藏');
+                return;
+            }
+            const data = JSON.stringify(sites, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+            a.download = `我的网址导航_备份_${dateStr}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast(`📥 已导出 ${sites.length} 个收藏`);
+        }
+
+        // 导入收藏（替换模式）
+        function importSites(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (!Array.isArray(imported)) {
+                        showToast('⚠️ 文件格式不正确');
+                        return;
+                    }
+                    // 验证每条数据
+                    const valid = imported.filter(s => s && typeof s.name === 'string' && typeof s.url === 'string');
+                    if (valid.length === 0) {
+                        showToast('⚠️ 文件中没有有效数据');
+                        return;
+                    }
+                    allSites = valid;
+                    saveSites(allSites);
+                    render(allSites);
+                    showToast(`📤 已导入 ${valid.length} 个收藏`);
+                } catch {
+                    showToast('⚠️ 文件解析失败，请检查格式');
+                }
+            };
+            reader.readAsText(file);
         }
 
         // 初始化默认数据（仅在首次使用时）
@@ -846,6 +932,20 @@
 
         document.getElementById('searchInput').addEventListener('input', (e) => {
             filterSites(e.target.value);
+        });
+
+        // 导出导入
+        document.getElementById('btnExport').addEventListener('click', exportSites);
+        document.getElementById('btnImport').addEventListener('click', () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = (e) => {
+                if (e.target.files.length > 0) {
+                    importSites(e.target.files[0]);
+                }
+            };
+            input.click();
         });
 
         // ──────────────── 启动 ────────────────
