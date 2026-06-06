@@ -330,9 +330,17 @@
                         </select>
                     </div>
                     <div class="editor-half">
-                        <label>封面图标</label>
-                        <select id="editEmoji">
-                            <option value="🚀">🚀 技术</option>
+                        <label>封面图片</label>
+                        <div class="cover-upload-wrap">
+                            <input type="file" id="editCover" accept="image/*" style="display:none">
+                            <button type="button" id="btnPickCover" class="btn-cover-pick">📷 选择图片</button>
+                            <button type="button" id="btnClearCover" class="btn-cover-clear" style="display:none">✕ 清除</button>
+                            <div class="cover-preview" id="coverPreview" style="display:none">
+                                <img id="coverPreviewImg" src="" alt="预览">
+                            </div>
+                        </div>
+                        <select id="editEmoji" style="margin-top:8px;">
+                            <option value="🚀">🚀 默认图标（无图片时显示）</option>
                             <option value="⚡">⚡ 效率</option>
                             <option value="💻">💻 编程</option>
                             <option value="🔧">🔧 工具</option>
@@ -415,6 +423,6 @@
         </div>
     </div>
 
-    <script src="script.js?v=6"></script>
+    <script src="script.js?v=7"></script>
 </body>
 </html>

@@ -134,7 +134,8 @@ async function pullFromCloud() {
                             ...cp,
                             tags: tags,
                             readTime: cp.readtime || '1 分钟',
-                            emoji: cp.emoji || '📝'
+                            emoji: cp.emoji || '📝',
+                            cover_image: cp.cover_image || null
                         };
                     });
                     cacheSet(key, fixed);
@@ -346,6 +347,13 @@ const editBody = document.getElementById('editBody');
 const editorToolbar = document.getElementById('editorToolbar');
 const btnPublish = document.getElementById('btnPublish');
 const editorHint = document.getElementById('editorHint');
+// 封面图片
+const editCover = document.getElementById('editCover');
+const btnPickCover = document.getElementById('btnPickCover');
+const btnClearCover = document.getElementById('btnClearCover');
+const coverPreview = document.getElementById('coverPreview');
+const coverPreviewImg = document.getElementById('coverPreviewImg');
+let coverImageData = null; // Base64 data URL
 
 let currentPostId = null; // 当前打开的文章 ID
 
@@ -407,7 +415,7 @@ function renderPosts(posts) {
         const isUserPost = userPosts.some(p => p.id === post.id);
         card.innerHTML = `
             <div class="card-image">
-                <span class="card-emoji">${post.emoji}</span>
+                ${post.cover_image ? `<img src="${escapeHtml(post.cover_image)}" class="card-cover-img" alt="${escapeHtml(post.title)}">` : `<span class="card-emoji">${post.emoji}</span>`}
             </div>
             <div class="card-body">
                 <div class="card-tags">
@@ -674,12 +682,26 @@ function openEditor() {
     editEmoji.value = '🚀';
     editBody.value = '';
     editorHint.textContent = '';
+    // 清除封面图片
+    coverImageData = null;
+    editCover.value = '';
+    coverPreview.style.display = 'none';
+    coverPreviewImg.src = '';
+    btnClearCover.style.display = 'none';
+    btnPickCover.style.display = 'inline-flex';
     editTitle.focus();
 }
 
 function closeEditor() {
     editorModal.classList.remove('active');
     document.body.style.overflow = '';
+    // 清除封面图片状态
+    coverImageData = null;
+    editCover.value = '';
+    coverPreview.style.display = 'none';
+    coverPreviewImg.src = '';
+    btnClearCover.style.display = 'none';
+    btnPickCover.style.display = 'inline-flex';
 }
 
 async function publishPost() {
@@ -708,6 +730,7 @@ async function publishPost() {
         date: dateStr,
         readTime,
         emoji,
+        cover_image: coverImageData || null,
         body: `<p>${body.replace(/\n/g, '</p><p>')}</p>`
     };
 
@@ -740,6 +763,7 @@ async function publishPost() {
                 date: newPost.date,
                 readtime: newPost.readTime,
                 emoji: newPost.emoji,
+                cover_image: newPost.cover_image || null,
                 body: newPost.body
             };
             const { error } = await dbClient.from('user_posts').upsert(dbPost);
@@ -759,7 +783,8 @@ async function publishPost() {
                         ...cp,
                         tags: tags,
                         readTime: cp.readtime || '1 分钟',
-                        emoji: cp.emoji || '📝'
+                        emoji: cp.emoji || '📝',
+                        cover_image: cp.cover_image || null
                     };
                 });
                 cacheSet('blog_user_posts', merged);
@@ -821,6 +846,30 @@ btnWriteArticle.addEventListener('click', openEditor);
 btnPublish.addEventListener('click', publishPost);
 editorClose.addEventListener('click', closeEditor);
 editorOverlay.addEventListener('click', closeEditor);
+
+// 封面图片选择
+btnPickCover.addEventListener('click', () => editCover.click());
+editCover.addEventListener('change', () => {
+    const file = editCover.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+        coverImageData = reader.result;
+        coverPreview.style.display = 'block';
+        coverPreviewImg.src = reader.result;
+        btnClearCover.style.display = 'inline-flex';
+        btnPickCover.style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+});
+btnClearCover.addEventListener('click', () => {
+    coverImageData = null;
+    editCover.value = '';
+    coverPreview.style.display = 'none';
+    coverPreviewImg.src = '';
+    btnClearCover.style.display = 'none';
+    btnPickCover.style.display = 'inline-flex';
+});
 
 // ===== 用户界面更新 =====
 function updateAuthUI() {
