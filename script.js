@@ -669,13 +669,16 @@ async function submitComment() {
     if (!body) { commentHint.textContent = '请输入评论内容'; return; }
     if (!currentPostId) return;
 
+    const now = new Date();
+    const localTime = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0') + ' ' +
+        String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
     const newComment = {
         id: genSafeId(),
         post_id: currentPostId,
         username: user.username,
         user_id: user.id,
         body: body,
-        time: new Date().toISOString().replace('T', ' ').slice(0, 16)
+        time: localTime
     };
 
     // 先显示本地
