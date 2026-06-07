@@ -1074,76 +1074,157 @@ async function runAndCheck(eid) {
     indicator.style.display = 'none';
     statusEl.textContent = '';
 
-    try {
-        const response = await fetch('https://emkc.org/api/v2/piston/execute', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+    let runResult = null;
+    let apiUsed = '';
+
+    // 尝试多个 API 端点
+    const apis = [
+        {
+            name: 'Glot.io',
+            url: 'https://glot.io/api/run/cpp/latest',
+            buildBody: () => JSON.stringify({
+                files: [{ name: 'main.cpp', content: code }],
+                stdin: stdin
+            }),
+            parse: (data) => ({ stdout: data.stdout || '', stderr: data.stderr || '', error: data.error || '', time: 0, memory: 0 })
+        },
+        {
+            name: 'Wandbox',
+            url: 'https://wandbox.org/api/compile.json',
+            buildBody: () => JSON.stringify({
+                compiler: 'gcc-head',
+                code: code,
+                stdin: stdin
+            }),
+            parse: (data) => ({
+                stdout: data.program_output || '',
+                stderr: data.compiler_error || data.program_error || '',
+                error: '',
+                time: 0,
+                memory: 0
+            })
+        },
+        {
+            name: 'Piston',
+            url: 'https://emkc.org/api/v2/piston/execute',
+            buildBody: () => JSON.stringify({
                 language: 'cpp',
                 version: '10.2.0',
                 files: [{ content: code }],
                 stdin: stdin
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error('API 请求失败: ' + response.status);
-        }
-
-        const data = await response.json();
-        const run = data.run;
-
-        resultDiv.classList.add('show');
-
-        if (run.stderr) {
-            // 编译错误
-            resultDiv.classList.add('fail');
-            resultDiv.innerHTML = '<strong>❌ 编译/运行错误 (stderr)</strong><pre>' + escapeHtml(run.stderr) + '</pre>';
-            indicator.style.display = 'inline-flex';
-            indicator.className = 'test-indicator fail-some';
-            indicator.textContent = '❌ 编译错误';
-        } else if (run.signal) {
-            // 程序被杀死（超时/段错误等）
-            resultDiv.classList.add('fail');
-            resultDiv.innerHTML = '<strong>❌ 运行异常</strong> 信号: ' + escapeHtml(run.signal) + '<pre>' + (run.stdout ? escapeHtml(run.stdout) : '(无输出)') + '</pre>';
-            indicator.style.display = 'inline-flex';
-            indicator.className = 'test-indicator fail-some';
-            indicator.textContent = '❌ 运行异常';
-        } else {
-            // 比较输出
-            const actual = (run.stdout || '').replace(/\s+$/g, '');
-            const exp = expected.replace(/\s+$/g, '');
-
-            if (actual === exp) {
-                resultDiv.classList.add('pass');
-                resultDiv.innerHTML = '<strong>✅ 通过！输出与期望完全一致。</strong><pre>' + escapeHtml(run.stdout || '(空)') + '</pre>';
-                indicator.style.display = 'inline-flex';
-                indicator.className = 'test-indicator pass-all';
-                indicator.textContent = '✅ 通过';
-            } else {
-                resultDiv.classList.add('fail');
-                let diffHtml = '<strong>❌ 输出不匹配</strong>';
-                diffHtml += '<div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap">';
-                diffHtml += '<div style="flex:1;min-width:180px"><span style="color:var(--green)">期望输出:</span><pre>' + escapeHtml(expected) + '</pre></div>';
-                diffHtml += '<div style="flex:1;min-width:180px"><span style="color:var(--red)">实际输出:</span><pre>' + escapeHtml(run.stdout || '(空)') + '</pre></div>';
-                diffHtml += '</div>';
-                resultDiv.innerHTML = diffHtml;
-                indicator.style.display = 'inline-flex';
-                indicator.className = 'test-indicator fail-some';
-                indicator.textContent = '❌ 不匹配';
+            }),
+            parse: (data) => {
+                const run = data.run || {};
+                return {
+                    stdout: run.stdout || '',
+                    stderr: run.stderr || '',
+                    error: run.signal || '',
+                    time: run.time || 0,
+                    memory: run.memory || 0
+                };
             }
         }
+    ];
 
-        statusEl.textContent = '耗时: ' + (run.time || 0) + 'ms | 内存: ' + (run.memory || 0) + 'KB';
+    for (const api of apis) {
+        try {
+            const response = await fetch(api.url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: api.buildBody()
+            });
 
-    } catch (err) {
+            if (response.ok) {
+                const data = await response.json();
+                runResult = api.parse(data);
+                apiUsed = api.name;
+                break;
+            }
+        } catch (e) {
+            // 尝试下一个 API
+            continue;
+        }
+    }
+
+    if (!runResult) {
         resultDiv.classList.add('show', 'fail');
-        resultDiv.innerHTML = '<strong>⚠️ 网络错误</strong><br>' + escapeHtml(err.message) + '<br><small style="color:var(--text-muted)">提示：请检查网络连接，或复制代码到本地 IDE 运行。</small>';
+        resultDiv.innerHTML = '<strong>⚠️ 云端编译暂不可用</strong><br><small style="color:var(--text-muted);">自动编译 API 暂时无法访问，请复制代码到本地 IDE 编译运行。</small><br><div style="margin-top:8px;padding:10px;background:rgba(0,0,0,.2);border-radius:6px;font-size:.8rem;">📋 <strong>手动检查方法：</strong><br>1. 复制上方代码到本地 .cpp 文件<br>2. 编译运行，将输出粘贴到下方<br><input id="' + eid + '_manualOut" placeholder="在此粘贴你的程序输出..." style="width:100%;padding:8px;background:var(--code-bg);border:1px solid var(--border);color:var(--text);border-radius:4px;margin-top:4px;font-family:monospace;font-size:.82rem;"><br><button onclick="manualCheck(\'' + eid + '\')" style="margin-top:6px;padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.8rem;">手动比对</button><span id="' + eid + '_manualResult" style="margin-left:8px;font-size:.82rem;"></span></div>';
         indicator.style.display = 'none';
-    } finally {
         runBtn.disabled = false;
         runBtn.innerHTML = '▶ 运行并检查';
         runBtn.classList.remove('loading');
+        return;
+    }
+
+    const { stdout, stderr, error, time, memory } = runResult;
+    resultDiv.classList.add('show');
+
+    if (stderr && !stdout) {
+        resultDiv.classList.add('fail');
+        resultDiv.innerHTML = '<strong>❌ 编译/运行错误 (stderr)</strong><pre>' + escapeHtml(stderr) + '</pre>';
+        indicator.style.display = 'inline-flex';
+        indicator.className = 'test-indicator fail-some';
+        indicator.textContent = '❌ 编译错误';
+    } else if (error) {
+        resultDiv.classList.add('fail');
+        resultDiv.innerHTML = '<strong>❌ 运行异常</strong> 信号: ' + escapeHtml(error) + '<pre>' + (stdout ? escapeHtml(stdout) : '(无输出)') + '</pre>';
+        indicator.style.display = 'inline-flex';
+        indicator.className = 'test-indicator fail-some';
+        indicator.textContent = '❌ 运行异常';
+    } else {
+        const actual = (stdout || '').replace(/\s+$/g, '');
+        const exp = expected.replace(/\s+$/g, '');
+
+        if (actual === exp) {
+            resultDiv.classList.add('pass');
+            resultDiv.innerHTML = '<strong>✅ 通过！输出与期望完全一致。</strong><pre>' + escapeHtml(stdout || '(空)') + '</pre>';
+            indicator.style.display = 'inline-flex';
+            indicator.className = 'test-indicator pass-all';
+            indicator.textContent = '✅ 通过';
+        } else {
+            resultDiv.classList.add('fail');
+            let diffHtml = '<strong>❌ 输出不匹配</strong>';
+            diffHtml += '<div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap">';
+            diffHtml += '<div style="flex:1;min-width:180px"><span style="color:var(--green)">期望输出:</span><pre>' + escapeHtml(expected) + '</pre></div>';
+            diffHtml += '<div style="flex:1;min-width:180px"><span style="color:var(--red)">实际输出:</span><pre>' + escapeHtml(stdout || '(空)') + '</pre></div>';
+            diffHtml += '</div>';
+            resultDiv.innerHTML = diffHtml;
+            indicator.style.display = 'inline-flex';
+            indicator.className = 'test-indicator fail-some';
+            indicator.textContent = '❌ 不匹配';
+        }
+    }
+
+    statusEl.textContent = 'API: ' + apiUsed + ' | 耗时: ' + time + 'ms | 内存: ' + (memory || 0) + 'KB';
+    runBtn.disabled = false;
+    runBtn.innerHTML = '▶ 运行并检查';
+    runBtn.classList.remove('loading');
+}
+
+// 手动比对函数
+function manualCheck(eid) {
+    const expected = document.getElementById(eid + '_expected').value;
+    const manualOut = document.getElementById(eid + '_manualOut');
+    const manualResult = document.getElementById(eid + '_manualResult');
+    const indicator = document.getElementById(eid + '_indicator');
+    const resultDiv = document.getElementById(eid + '_result');
+
+    if (!manualOut) return;
+    const actual = manualOut.value.replace(/\s+$/g, '');
+    const exp = expected.replace(/\s+$/g, '');
+
+    if (actual === exp) {
+        manualResult.innerHTML = '✅ 通过！';
+        manualResult.style.color = 'var(--green)';
+        indicator.style.display = 'inline-flex';
+        indicator.className = 'test-indicator pass-all';
+        indicator.textContent = '✅ 通过';
+    } else {
+        manualResult.innerHTML = '❌ 不匹配，请检查输出格式';
+        manualResult.style.color = 'var(--red)';
+        indicator.style.display = 'inline-flex';
+        indicator.className = 'test-indicator fail-some';
+        indicator.textContent = '❌ 不匹配';
     }
 }
 
